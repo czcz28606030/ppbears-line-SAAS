@@ -221,6 +221,50 @@ export async function adminRoutes(app: FastifyInstance) {
       return { documentId: docId, message: '文件已上傳，正在進行索引...' };
     });
 
+    protectedApp.post('/knowledge/upload', async (request: FastifyRequest, reply: FastifyReply) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const data = await request.file();
+      if (!data) return reply.status(400).send({ error: 'No file uploaded' });
+
+      const category = (data.fields.category as any)?.value || 'general';
+      const fileType = data.filename.split('.').pop()?.toLowerCase() || 'txt';
+      const filename = data.filename;
+      const buffer = await data.toBuffer();
+
+      let content = '';
+      try {
+        if (fileType === 'pdf') {
+          const pdfParse = (await import('pdf-parse')).default;
+          const pdfData = await pdfParse(buffer);
+          content = pdfData.text;
+        } else if (fileType === 'docx') {
+          const mammoth = await import('mammoth');
+          const result = await mammoth.extractRawText({ buffer });
+          content = result.value;
+        } else {
+          // txt, md, csv, json
+          content = buffer.toString('utf-8');
+        }
+      } catch (err: any) {
+        log.error({ err: err.message, fileType }, 'Failed to parse file content');
+        return reply.status(400).send({ error: 'Failed to parse document content: ' + err.message });
+      }
+
+      if (!content || !content.trim()) {
+        return reply.status(400).send({ error: 'Extracted content is empty or unreadable' });
+      }
+
+      const storagePath = `tenants/${tenantId}/knowledge/${Date.now()}_${filename}`;
+      const docId = await knowledgeBaseService.registerDocument(tenantId, filename, fileType, storagePath, category);
+      
+      // Process asynchronously
+      knowledgeBaseService.processDocument(tenantId, docId, content).catch((err: any) =>
+        log.error({ tenantId, docId, err: err.message }, 'Background document processing failed')
+      );
+      
+      return { documentId: docId, message: '文件已上傳，正在進行索引...' };
+    });
+
     protectedApp.delete<{ Params: { id: string } }>('/knowledge/:id', async (request) => {
       const tenantId = (request as any).jwtUser.tenantId;
       const { id } = request.params;

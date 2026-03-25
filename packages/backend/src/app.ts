@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
+import multipart from '@fastify/multipart';
 import { config } from './config/index.js';
 import { logger } from './utils/logger.js';
 import { webhookRoutes } from './channels/webhook.routes.js';
@@ -22,6 +23,12 @@ async function buildApp() {
   });
 
   await app.register(helmet, { contentSecurityPolicy: false });
+
+  await app.register(multipart, {
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB
+    },
+  });
 
   await app.register(rateLimit, {
     max: config.rateLimit.max,

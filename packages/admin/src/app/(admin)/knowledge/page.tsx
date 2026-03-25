@@ -29,6 +29,29 @@ export default function KnowledgePage() {
     finally { setLoading(false); }
   }
 
+  async function handleUpload() {
+    if (!form.file) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', form.file);
+      formData.append('category', form.category);
+
+      await apiFetch('/api/admin/knowledge/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      setShowUpload(false);
+      setForm({ category: 'general', file: null });
+      fetchDocs();
+    } catch (err: any) {
+      alert('上傳失敗: ' + (err.message || 'Unknown error'));
+    } finally {
+      setUploading(false);
+    }
+  }
+
   useEffect(() => { fetchDocs(); }, []);
 
   const categories = [
@@ -133,7 +156,7 @@ export default function KnowledgePage() {
               </div>
               <div className="modal-footer">
                 <button className="btn btn-ghost" onClick={() => setShowUpload(false)}>取消</button>
-                <button className="btn btn-primary" disabled={!form.file || uploading}>
+                <button className="btn btn-primary" disabled={!form.file || uploading} onClick={handleUpload}>
                   {uploading ? '上傳中...' : '確認上傳'}
                 </button>
               </div>
