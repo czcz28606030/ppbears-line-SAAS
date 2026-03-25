@@ -29,6 +29,12 @@ export interface WooOrder {
     quantity: number;
     total: string;
   }>;
+  shipping_lines: Array<{
+    method_title: string;
+    method_id: string;
+  }>;
+  payment_method_title: string;
+  date_paid: string | null;
   meta_data: Array<{ key: string; value: any }>;
 }
 
@@ -122,21 +128,42 @@ export class WooCommerceService {
    */
   formatOrderSummary(order: WooOrder): string {
     const status = STATUS_MAP[order.status] || order.status;
-    const items = order.line_items.map(i => `・${i.name} x${i.quantity}`).join('\n');
     const name = `${order.billing.last_name}${order.billing.first_name}`;
     const date = new Date(order.date_created).toLocaleDateString('zh-TW');
+    const items = order.line_items.map(i => `・${i.name} x${i.quantity}`).join('\n');
 
-    return [
-      `📦 訂單 #${order.number}`,
-      `狀態：${status}`,
-      `下單日期：${date}`,
-      `訂購人：${name}`,
+    // Parse meta_data for logistics info
+    const getMeta = (key: string) => order.meta_data?.find(m => m.key === key)?.value || '';
+    const trackingNumber = getMeta('tracking_number') || getMeta('_tracking_number') || getMeta('wcfm_tracking_no');
+    const shippingMethod = order.shipping_lines?.[0]?.method_title || getMeta('_shipping_method_title') || '未設定';
+    const pickupStore = getMeta('pickup_store') || getMeta('_ecpay_logistics_store_name') || getMeta('_store_name') || getMeta('st_pickup_store');
+    const paymentMethod = order.payment_method_title || getMeta('_payment_method_title') || '未設定';
+    const isPaid = order.date_paid ? '已付款成功' : '尚未付款';
+
+    const lines = [
+      `📦 訂單 #${order.number} 查詢結果`,
       ``,
-      `商品：`,
-      items,
-      ``,
-      `總金額：${order.currency} ${order.total}`,
-    ].join('\n');
+      `1) 訂單狀態：${status}（${order.status}）`,
+      `2) 出貨/物流：${trackingNumber ? `物流單號 ${trackingNumber}` : '目前尚未出貨，還沒有物流單號'}`,
+      `3) 配送方式：${shippingMethod}`,
+    ];
+
+    if (pickupStore) {
+      lines.push(`4) 取貨門市：${pickupStore}`);
+      lines.push(`5) 付款方式／付款狀態：${paymentMethod}，${isPaid}`);
+    } else {
+      const addr = [order.shipping.city, order.shipping.address_1].filter(Boolean).join(' ') || '未設定';
+      lines.push(`4) 配送地址：${addr}`);
+      lines.push(`5) 付款方式／付款狀態：${paymentMethod}，${isPaid}`);
+    }
+
+    lines.push('');
+    lines.push(`下單日期：${date}`);
+    lines.push(`訂購人：${name}`);
+    lines.push(`商品：\n${items}`);
+    lines.push(`總金額：${order.currency} ${order.total}`);
+
+    return lines.join('\n');
   }
 
   /**

@@ -5,8 +5,8 @@ const log = createLogger({ module: 'OrderQuery' });
 
 // Conversation state for multi-turn order lookup
 interface OrderQueryState {
-  step: 'ask_identifier' | 'verify_identity' | 'done';
-  pendingOrder?: WooOrder;
+  step: 'ask_verifier' | 'done';
+  pendingOrderNumber: string;
   attempts: number;
 }
 
@@ -17,12 +17,33 @@ function getStateKey(tenantId: string, userId: string) {
 }
 
 /**
+ * Determine if the message contains an order number.
+ * Detects patterns like: 訂單133495 / 訂單#133495 / #133495 / Order 133495
+ */
+function extractOrderNumber(text: string): string | null {
+  // Match: keyword + number OR just #number with 4+ digits
+  const patterns = [
+    /(?:訂單|單號|order)[^\d]*#?(\d{4,})/i,  // 訂單 #12345
+    /#(\d{4,})/,                                // #12345 standalone
+    /^(\d{4,})$/,                               // pure number 12345
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+/**
  * Determine if the message is requesting an order lookup.
  */
 export function isOrderQueryIntent(text: string): boolean {
-  const keywords = ['查訂單', '查單', '我的訂單', '訂單狀態', '訂單查詢', '查看訂單', '我的包裹', '包裹', '運送', '出貨'];
+  const keywords = ['查訂單', '查單', '我的訂單', '訂單狀態', '訂單查詢', '查看訂單', '我的包裹', '包裹', '運送', '出貨', '物流'];
   const lowered = text.toLowerCase();
-  return keywords.some(kw => lowered.includes(kw));
+  if (keywords.some(kw => lowered.includes(kw))) return true;
+  // Also trigger if message directly contains an order number
+  if (extractOrderNumber(text)) return true;
+  return false;
 }
 
 /**
@@ -37,79 +58,53 @@ export async function handleOrderQuery(
   const key = getStateKey(tenantId, userId);
   let state = stateMap.get(key);
 
-  // Starting fresh query
+  // Starting fresh query — user provides order number directly
+  const orderNum = extractOrderNumber(text);
+
+  if (!state && orderNum) {
+    stateMap.set(key, { step: 'ask_verifier', pendingOrderNumber: orderNum, attempts: 0 });
+    return `收到您的訂單查詢（訂單 #${orderNum}）🔍\n\n為了保護您的個資安全，請再提供以下任一項核對資料：\n1. 下單姓名\n2. 下單電話號碼\n\n（兩者符合其中一項即可查詢）`;
+  }
+
   if (!state && isOrderQueryIntent(text)) {
-    stateMap.set(key, { step: 'ask_identifier', attempts: 0 });
-    return '我來幫您查詢訂單 📦\n\n請提供以下任一資訊：\n・訂單編號（例如：#1234）\n・購買時的電子信箱\n・購買時的手機號碼';
+    return '請提供您的訂單編號（例如：訂單 #1234），我將協助您查詢訂單狀態。';
   }
 
   if (!state) return null;
 
-  // Step 1: User provides order identifier
-  if (state.step === 'ask_identifier') {
-    const orderNumMatch = text.match(/#?(\d{3,})/);
-    const emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-    const phoneMatch = text.match(/09\d{8}/);
+  // Step: Verify identity via name or phone
+  if (state.step === 'ask_verifier') {
+    const { pendingOrderNumber } = state;
 
-    let order: WooOrder | null = null;
-    let lookupKey = '';
-    let lookupType = '';
-
-    if (orderNumMatch) {
-      lookupKey = orderNumMatch[1];
-      lookupType = 'order_number';
-      order = await wooCommerceService.findOrderByNumber(tenantId, lookupKey);
-    } else if (emailMatch) {
-      lookupKey = emailMatch[0];
-      lookupType = 'email';
-      const orders = await wooCommerceService.findOrdersByContact(tenantId, lookupKey);
-      order = orders[0] || null;
-    } else if (phoneMatch) {
-      lookupKey = phoneMatch[0];
-      lookupType = 'phone';
-      const orders = await wooCommerceService.findOrdersByContact(tenantId, lookupKey);
-      order = orders[0] || null;
-    } else {
-      state.attempts++;
-      if (state.attempts >= 3) {
-        stateMap.delete(key);
-        return '找不到符合的訂單資料。如需協助請輸入「真人」轉接客服人員。';
-      }
-      return '請提供訂單編號（例如：#1234）、電子信箱或手機號碼。';
-    }
-
-    await wooCommerceService.logLookup(tenantId, userId, lookupKey, lookupType, !!order);
+    // Fetch order from WooCommerce
+    const order = await wooCommerceService.findOrderByNumber(tenantId, pendingOrderNumber);
 
     if (!order) {
       stateMap.delete(key);
-      return '查無相符的訂單，請確認資訊是否正確。如需協助請輸入「真人」轉接客服人員。';
+      await wooCommerceService.logLookup(tenantId, userId, pendingOrderNumber, 'order_number', false);
+      return `很抱歉，查無訂單 #${pendingOrderNumber} 的相關資料。\n請確認訂單編號是否正確，或輸入「真人」轉接真人客服。`;
     }
 
-    // For security, require one verification before showing full details
-    state.step = 'verify_identity';
-    state.pendingOrder = order;
+    // Verify against name or phone
+    const fullName = `${order.billing.last_name}${order.billing.first_name}`;
+    const phone = order.billing.phone?.replace(/[^0-9]/g, '') || '';
+    const inputPhone = text.replace(/[^0-9]/g, '');
+    const inputText = text.trim();
 
-    const name = `${order.billing.last_name}${order.billing.first_name}`;
-    return `找到一筆訂單（訂購人：${name.substring(0, 1)}**）\n\n為了保護您的個資，請再確認購買者的姓名後兩個字：`;
-  }
+    const nameMatch = fullName.includes(inputText) || inputText.includes(fullName.slice(-2));
+    const phoneMatch = phone.length > 0 && inputPhone.length >= 8 && phone.includes(inputPhone);
 
-  // Step 2: Verify identity
-  if (state.step === 'verify_identity' && state.pendingOrder) {
-    const order = state.pendingOrder;
-    const name = `${order.billing.last_name}${order.billing.first_name}`;
-    const lastTwo = name.slice(-2);
-    const userInput = text.trim();
-
-    if (userInput.includes(lastTwo) || name.includes(text.trim())) {
+    if (nameMatch || phoneMatch) {
       stateMap.delete(key);
+      await wooCommerceService.logLookup(tenantId, userId, pendingOrderNumber, 'order_number', true);
       return wooCommerceService.formatOrderSummary(order);
     } else {
       state.attempts++;
       if (state.attempts >= 3) {
         stateMap.delete(key);
-        return '驗證失敗次數過多，查詢已取消。如需協助請輸入「真人」轉接客服人員。';
+        return '驗證失敗次數過多，查詢已取消。\n如需協助請輸入「真人」轉接客服人員。';
       }
-      return '姓名不符，請再試一次（請輸入購買者姓名後兩個字）：';
+      return `核對失敗，請再試一次。\n請輸入下單時的姓名或電話號碼（還有 ${3 - state.attempts} 次機會）：`;
     }
   }
 
