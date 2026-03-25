@@ -362,10 +362,6 @@ export async function adminRoutes(app: FastifyInstance) {
       const tenantId = (request as any).jwtUser.tenantId;
       const { url, note } = request.body as { url: string; note?: string };
       if (!url) return reply.status(400).send({ error: '請提供產品 URL' });
-      // Validate: must be a product permalink, not a category or tag page
-      if (url.includes('/product-category/') || url.includes('/product-tag/')) {
-        return reply.status(400).send({ error: '請輸入單一商品的網址（格式：https://your-site.com/product/商品名稱/），不可使用分類頁網址。' });
-      }
       const db = getSupabaseAdmin();
       const { data, error } = await db
         .from('product_url_allowlist')

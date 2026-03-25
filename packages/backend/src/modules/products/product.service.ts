@@ -124,27 +124,61 @@ export class ProductService {
 
     try {
       if (useAllowlist) {
-        // ── Allowlist sync: fetch each product by slug ─────────────────────
+        // ── Allowlist sync: supports product pages AND category pages ──────────
         log.info({ tenantId, count: allowlistUrls.length }, 'Starting allowlist-mode product sync');
 
         for (const url of allowlistUrls) {
-          const slug = this.extractSlugFromUrl(url);
-          if (!slug) { errors++; continue; }
-
           try {
-            // Try fetching by slug
-            const apiUrl = `${creds.baseUrl}/wp-json/wc/v3/products?slug=${encodeURIComponent(slug)}&consumer_key=${creds.consumerKey}&consumer_secret=${creds.consumerSecret}`;
-            const res = await fetch(apiUrl);
-            if (!res.ok) { errors++; continue; }
-            const results = await res.json() as WooProduct[];
-            if (results.length > 0) {
-              await upsertProduct(results[0]);
+            if (url.includes('/product-category/') || url.includes('/product_cat/')) {
+              // ── Category URL: sync all products in this category ──────────
+              const catSlug = this.extractSlugFromUrl(url);
+              if (!catSlug) { errors++; continue; }
+
+              // Step 1: Resolve category slug → WooCommerce category ID
+              const catApiUrl = `${creds.baseUrl}/wp-json/wc/v3/products/categories?slug=${encodeURIComponent(catSlug)}&consumer_key=${creds.consumerKey}&consumer_secret=${creds.consumerSecret}`;
+              const catRes = await fetch(catApiUrl);
+              if (!catRes.ok) { errors++; continue; }
+              const cats = await catRes.json() as Array<{ id: number; name: string }>;
+              if (!cats.length) {
+                log.warn({ tenantId, url, catSlug }, 'Category not found by slug');
+                errors++;
+                continue;
+              }
+              const categoryId = cats[0].id;
+
+              // Step 2: Paginate all products in this category
+              let catPage = 1;
+              while (true) {
+                const prodUrl = `${creds.baseUrl}/wp-json/wc/v3/products?category=${categoryId}&per_page=100&page=${catPage}&status=publish&consumer_key=${creds.consumerKey}&consumer_secret=${creds.consumerSecret}`;
+                const prodRes = await fetch(prodUrl);
+                if (!prodRes.ok) break;
+                const catProducts = await prodRes.json() as WooProduct[];
+                if (!catProducts.length) break;
+                for (const p of catProducts) {
+                  try { await upsertProduct(p); } catch (err: any) { errors++; }
+                }
+                catPage++;
+              }
+              log.info({ tenantId, catSlug, categoryId }, 'Category sync complete');
+
             } else {
-              log.warn({ tenantId, url, slug }, 'Allowlist URL: product not found by slug');
-              errors++;
+              // ── Product URL: sync single product by slug ──────────────────
+              const slug = this.extractSlugFromUrl(url);
+              if (!slug) { errors++; continue; }
+
+              const apiUrl = `${creds.baseUrl}/wp-json/wc/v3/products?slug=${encodeURIComponent(slug)}&consumer_key=${creds.consumerKey}&consumer_secret=${creds.consumerSecret}`;
+              const res = await fetch(apiUrl);
+              if (!res.ok) { errors++; continue; }
+              const results = await res.json() as WooProduct[];
+              if (results.length > 0) {
+                await upsertProduct(results[0]);
+              } else {
+                log.warn({ tenantId, url, slug }, 'Product not found by slug');
+                errors++;
+              }
             }
           } catch (err: any) {
-            log.error({ tenantId, url, err: err.message }, 'Allowlist product fetch failed');
+            log.error({ tenantId, url, err: err.message }, 'Allowlist item sync failed');
             errors++;
           }
         }
