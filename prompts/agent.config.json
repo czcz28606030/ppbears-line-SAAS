@@ -1,0 +1,86 @@
+{
+    "version": "1.2",
+    "project_name": "SmileClawClaw_Team",
+    "agents": {
+        "ceo": {
+            "name": "Chief Executive Officer",
+            "model": "GPT-OSS 120B (Medium)",
+            "temperature": 0.7,
+            "prompt_file": "prompts/role_ceo.md",
+            "description": "負責產品戰略與高層需求定義",
+            "capabilities": [
+                "reasoning",
+                "planning"
+            ]
+        },
+        "pm": {
+            "name": "Project Manager",
+            "model": "GPT-OSS 120B (Medium)",
+            "temperature": 0.5,
+            "prompt_file": "prompts/role_pm.md",
+            "description": "負責任務拆解、進度管理與API規格制定",
+            "capabilities": [
+                "file_read",
+                "task_delegation"
+            ]
+        },
+        "dba": {
+            "name": "Database Architect",
+            "model": "Claude Sonnet 4.5 (Thinking)",
+            "temperature": 0.0,
+            "prompt_file": "prompts/role_dba.md",
+            "description": "負責資料庫建模、SQL 優化與連線安全管理",
+            "capabilities": [
+                "schema_design",
+                "sql_optimization",
+                "security_audit"
+            ]
+        },
+        "frontend_pg": {
+            "name": "Frontend Developer (Vue)",
+            "model": "Claude Sonnet 4.5 (Thinking)",
+            "temperature": 1.0,
+            "prompt_file": "prompts/role_frontend.md",
+            "description": "Vue.js 前端開發專家 (使用 Thinking 模式)",
+            "capabilities": [
+                "code_write",
+                "file_edit"
+            ]
+        },
+        "backend_pg": {
+            "name": "Backend Developer (Laravel)",
+            "model": "Claude Sonnet 4.5 (Thinking)",
+            "temperature": 1.0,
+            "prompt_file": "prompts/role_backend.md",
+            "description": "Laravel 後端開發專家 (使用 Thinking 模式)",
+            "capabilities": [
+                "code_write",
+                "file_edit",
+                "terminal_exec"
+            ]
+        },
+        "python_pg": {
+            "name": "Python Developer",
+            "model": "Claude Sonnet 4.5 (Thinking)",
+            "temperature": 1.0,
+            "prompt_file": "prompts/role_python.md",
+            "description": "Python 開發專家 (使用 Thinking 模式)",
+            "capabilities": [
+                "code_write",
+                "file_edit",
+                "terminal_exec"
+            ]
+        },
+        "tester": {
+            "name": "Test Specialist",
+            "model": "GPT-OSS 120B (Medium)",
+            "temperature": 0.2,
+            "prompt_file": "prompts/role_tester.md",
+            "description": "負責程式碼審查與品質保證",
+            "capabilities": [
+                "code_review",
+                "file_read"
+            ]
+        }
+    }
+}

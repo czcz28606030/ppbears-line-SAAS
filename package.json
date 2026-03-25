@@ -1,0 +1,24 @@
+{
+  "name": "ppbears-cs-saas",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev -w packages/backend",
+    "dev:admin": "npm run dev -w packages/admin",
+    "build:backend": "npm run build -w packages/backend",
+    "build:admin": "npm run build -w packages/admin",
+    "test:backend": "npm run test -w packages/backend",
+    "lint": "turbo run lint",
+    "build": "turbo run build"
+  },
+  "devDependencies": {
+    "turbo": "^2.4.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "npm@10.0.0"
+}
