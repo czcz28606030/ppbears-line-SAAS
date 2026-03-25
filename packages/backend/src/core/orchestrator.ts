@@ -121,7 +121,8 @@ export class Orchestrator {
 
       // --- Phase 2: Product search intent ---
       if (productService.isProductQueryIntent(mergedContent)) {
-        const products = await productService.searchProducts(tenantId, mergedContent);
+        const searchKeyword = productService.extractSearchKeyword(mergedContent);
+        const products = await productService.searchProducts(tenantId, searchKeyword);
         if (products.length > 0) {
           const productReply = productService.formatProducts(products);
           const adapter = channelRegistry.get(replyCtx.channelType);

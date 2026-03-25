@@ -153,10 +153,35 @@ export class ProductService {
 
   /**
    * Determine if a message is asking about products.
+   * Wide net: catches 訂製/客製化/想買/買殼 etc.
    */
   isProductQueryIntent(text: string): boolean {
-    const keywords = ['手機殼', '殼', '款式', '産品', '產品', '有什麼', '推薦', '適合', '型號', '手機', '要怎麼買', '哪裡買'];
+    const keywords = [
+      // 明確產品字眼
+      '手機殼', '殼', '款式', '産品', '產品', '有什麼', '推薦', '適合', '型號',
+      '要怎麼買', '哪裡買', '在哪買', '怎麼購買',
+      // 訂製/客製相關
+      '訂製', '訂做', '客製', '客制', '想訂', '想做', '幫我做',
+      // 購買意圖
+      '想要', '想買', '購買', '要買', '我要', '幫我找', '有沒有',
+    ];
     return keywords.some(kw => text.includes(kw));
+  }
+
+  /**
+   * Extract the most useful search keyword from a customer message.
+   * Strips common filler phrases to focus on the phone model / product name.
+   */
+  extractSearchKeyword(text: string): string {
+    // Remove common filler phrases to get the core keyword
+    const fillers = [
+      '我想要', '我想', '幫我', '我要', '請問', '有沒有', '有嗎', '可以嗎',
+      '訂製', '訂做', '客製化', '客製', '客制', '手機殼', '殼', '款式', '推薦',
+      '購買', '想買', '要買', '的', '嗎', '呢', '喔', '耶',
+    ];
+    let kw = text;
+    for (const f of fillers) kw = kw.replace(new RegExp(f, 'g'), ' ');
+    return kw.replace(/\s+/g, ' ').trim() || text;
   }
 
   /**
