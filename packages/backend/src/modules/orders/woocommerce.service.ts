@@ -94,11 +94,21 @@ export class WooCommerceService {
     }
 
     try {
-      const url = `${creds.baseUrl}/wp-json/wc/v3/orders?number=${encodeURIComponent(orderNumber)}&${this.buildAuthQuery(creds.consumerKey, creds.consumerSecret)}`;
+      // WooCommerce REST API does not support ?number= natively.
+      // Use search param and then confirm match by order.number field.
+      const url = `${creds.baseUrl}/wp-json/wc/v3/orders?search=${encodeURIComponent(orderNumber)}&per_page=10&${this.buildAuthQuery(creds.consumerKey, creds.consumerSecret)}`;
       const res = await fetch(url);
-      if (!res.ok) throw new Error(`WC API error: ${res.status}`);
+      if (!res.ok) {
+        const errBody = await res.text();
+        log.error({ tenantId, status: res.status, errBody }, 'WooCommerce findOrderByNumber HTTP error');
+        throw new Error(`WC API error: ${res.status}`);
+      }
       const orders = await res.json() as WooOrder[];
-      return orders[0] || null;
+      // Match by order.number (string) or order.id (number)
+      const matched = orders.find(o =>
+        String(o.number) === String(orderNumber) || String(o.id) === String(orderNumber)
+      );
+      return matched || null;
     } catch (err: any) {
       log.error({ tenantId, err: err.message }, 'WooCommerce findOrderByNumber failed');
       return null;
