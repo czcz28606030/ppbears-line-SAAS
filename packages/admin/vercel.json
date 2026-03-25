@@ -1,7 +1,7 @@
 {
-    "version": 2,
-    "buildCommand": "cd ../.. && npm run build -w packages/admin",
-    "outputDirectory": "packages/admin/.next",
-    "framework": "nextjs",
-    "installCommand": "npm install --prefix packages/admin"
+      "version": 2,
+      "buildCommand": "cd ../.. && npm run build -w packages/admin",
+      "outputDirectory": "packages/admin/.next",
+      "framework": "nextjs",
+      "installCommand": "npm install --prefix packages/admin"
 }
