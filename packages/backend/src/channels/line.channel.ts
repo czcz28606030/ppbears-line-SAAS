@@ -165,19 +165,33 @@ export class LineChannelAdapter implements ChannelAdapter {
    */
   async sendLoadingAnimation(tenantId: string, platformUserId: string, seconds = 20): Promise<void> {
     const credentials = await this.getCredentials(tenantId);
-    if (!credentials) return;
+    if (!credentials) {
+      log.warn({ tenantId }, 'sendLoadingAnimation: no credentials found');
+      return;
+    }
 
-    await fetch('https://api.line.me/v2/bot/chat/loading/start', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${credentials.channelAccessToken}`,
-      },
-      body: JSON.stringify({
-        chatId: platformUserId,
-        loadingSeconds: seconds,
-      }),
-    });
+    try {
+      const res = await fetch('https://api.line.me/v2/bot/chat/loading/start', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${credentials.channelAccessToken}`,
+        },
+        body: JSON.stringify({
+          chatId: platformUserId,
+          loadingSeconds: seconds,
+        }),
+      });
+
+      if (!res.ok) {
+        const errBody = await res.text();
+        log.error({ tenantId, status: res.status, errBody, platformUserId }, 'sendLoadingAnimation: LINE API rejected');
+      } else {
+        log.info({ tenantId, platformUserId, seconds }, 'sendLoadingAnimation: sent successfully');
+      }
+    } catch (err: any) {
+      log.error({ tenantId, err: err.message }, 'sendLoadingAnimation: fetch error');
+    }
   }
 
   private mapMessageType(type: string): NormalizedMessage['messageType'] {
