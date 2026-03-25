@@ -10,6 +10,7 @@
     "build:backend": "npm run build -w packages/backend",
     "build:admin": "npm run build -w packages/admin",
     "test:backend": "npm run test -w packages/backend",
+    "dev": "turbo run dev",
     "lint": "turbo run lint",
     "build": "turbo run build"
   },

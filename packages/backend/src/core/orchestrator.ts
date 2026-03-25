@@ -80,6 +80,14 @@ export class Orchestrator {
     const convId = await conversationService.getOrCreateConversation(tenantId, userId, channelType);
     await conversationService.saveMessage(tenantId, convId, 'user', content);
 
+    // Trigger loading animation
+    const adapter = channelRegistry.get(channelType);
+    if (adapter && adapter.sendLoadingAnimation) {
+      adapter.sendLoadingAnimation(tenantId, platformUserId, 20).catch(err => 
+        log.error({ err: err.message }, 'Failed to send loading animation')
+      );
+    }
+
     // Store channel info for later reply
     const rawEvent = message.rawEvent as any;
     const replyToken = rawEvent?.replyToken;
@@ -366,6 +374,7 @@ export class Orchestrator {
     return `你是 PPBears 的 AI 客服助手。
 你只能回答與 PPBears 品牌、產品、訂單、客製化手機殼、售後服務相關的問題。
 如果客戶問了與 PPBears 無關的問題，請禮貌地引導客戶回到 PPBears 相關話題。
+如果需要反問客戶或讓客戶選擇，請以換行條列式清單呈現（例如：1. 選項A \\n 2. 選項B），且每一個選項自成一行。
 不要編造產品、價格、庫存或促銷活動。
 如果不確定，請建議客戶聯繫真人客服（輸入「真人」）。
 回答請使用繁體中文，語氣友善專業。`;

@@ -213,7 +213,7 @@ export async function adminRoutes(app: FastifyInstance) {
       const { filename, content, category } = request.body as { filename: string; content: string; category?: string };
       if (!filename || !content) throw new Error('filename and content are required');
       const storagePath = `tenants/${tenantId}/knowledge/${Date.now()}_${filename}`;
-      const docId = await knowledgeBaseService.registerDocument(tenantId, filename, 'text', storagePath, category || 'general');
+      const docId = await knowledgeBaseService.registerDocument(tenantId, filename, 'text', storagePath, category || 'general', content);
       // Process asynchronously
       knowledgeBaseService.processDocument(tenantId, docId, content).catch((err: any) =>
         log.error({ tenantId, docId, err: err.message }, 'Background document processing failed')
@@ -255,7 +255,7 @@ export async function adminRoutes(app: FastifyInstance) {
       }
 
       const storagePath = `tenants/${tenantId}/knowledge/${Date.now()}_${filename}`;
-      const docId = await knowledgeBaseService.registerDocument(tenantId, filename, fileType, storagePath, category);
+      const docId = await knowledgeBaseService.registerDocument(tenantId, filename, fileType, storagePath, category, content);
       
       // Process asynchronously
       knowledgeBaseService.processDocument(tenantId, docId, content).catch((err: any) =>
@@ -269,6 +269,47 @@ export async function adminRoutes(app: FastifyInstance) {
       const tenantId = (request as any).jwtUser.tenantId;
       const { id } = request.params;
       await knowledgeBaseService.deleteDocument(tenantId, id);
+      return { success: true };
+    });
+
+    protectedApp.get<{ Params: { id: string } }>('/knowledge/:id/content', async (request) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const { id } = request.params;
+      const db = getSupabaseAdmin();
+      const { data } = await db.from('knowledge_documents').select('raw_content').eq('id', id).eq('tenant_id', tenantId).single();
+      
+      let content = data?.raw_content || '';
+      
+      // 針對舊文件 (原先沒有 raw_content 欄位時上傳的)，嘗試從 knowledge_chunks 撈取
+      if (!content) {
+        const { data: chunks } = await db.from('knowledge_chunks')
+          .select('content')
+          .eq('document_id', id)
+          .eq('tenant_id', tenantId)
+          .order('chunk_index', { ascending: true });
+          
+        if (chunks && chunks.length > 0) {
+          // 因為預設有 50 字元的重疊 (overlap)，這裡簡單用分隔線串接，使用者仍可自行刪除重複處
+          content = chunks.map(c => c.content).join('\n\n');
+        }
+      }
+      
+      return { content };
+    });
+
+    protectedApp.put<{ Params: { id: string } }>('/knowledge/:id/content', async (request) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const { id } = request.params;
+      const { content } = request.body as { content: string };
+      const db = getSupabaseAdmin();
+      
+      await db.from('knowledge_documents').update({ raw_content: content }).eq('id', id).eq('tenant_id', tenantId);
+      
+      // Reprocess embeddings
+      knowledgeBaseService.processDocument(tenantId, id, content).catch((err: any) =>
+        log.error({ tenantId, docId: id, err: err.message }, 'Background document processing failed')
+      );
+      
       return { success: true };
     });
 

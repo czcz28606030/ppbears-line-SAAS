@@ -131,7 +131,7 @@ export class KnowledgeBaseService {
   /**
    * Register a new document record in the database.
    */
-  async registerDocument(tenantId: string, filename: string, fileType: string, storagePath: string, category = 'general'): Promise<string> {
+  async registerDocument(tenantId: string, filename: string, fileType: string, storagePath: string, category = 'general', content?: string): Promise<string> {
     const db = getSupabaseAdmin();
     const { data, error } = await db.from('knowledge_documents').insert({
       tenant_id: tenantId,
@@ -139,6 +139,7 @@ export class KnowledgeBaseService {
       file_type: fileType,
       category,
       storage_path: storagePath,
+      raw_content: content || null,
       status: 'pending',
     }).select('id').single();
 

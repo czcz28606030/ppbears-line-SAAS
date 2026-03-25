@@ -39,6 +39,7 @@ export interface ChannelAdapter {
   normalizeEvents(rawBody: unknown): NormalizedMessage[];
   sendReply(tenantId: string, platformUserId: string, messages: ReplyMessage[], replyToken?: string): Promise<void>;
   sendReplyWithToken?(tenantId: string, replyToken: string, messages: ReplyMessage[]): Promise<void>;
+  sendLoadingAnimation?(tenantId: string, platformUserId: string, seconds?: number): Promise<void>;
 }
 
 // ---- LLM Types ----
@@ -188,6 +189,7 @@ export interface KnowledgeDocumentRow {
   storage_path: string;
   status: KnowledgeDocStatus;
   uploaded_at: string;
+  raw_content: string | null;
 }
 
 export interface KnowledgeChunkRow {

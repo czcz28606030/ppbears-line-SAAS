@@ -65,7 +65,27 @@ export class LineChannelAdapter implements ChannelAdapter {
 
     const lineMessages = messages.map((msg) => {
       if (msg.type === 'text') {
-        return { type: 'text', text: msg.content };
+        const lines = msg.content.trim().split('\n');
+        const quickReplyItems: string[] = [];
+        let i = lines.length - 1;
+        while (i >= 0 && /^\d+\.\s+(.+)$/.test(lines[i].trim())) {
+          const match = lines[i].trim().match(/^\d+\.\s+(.+)$/);
+          if (match) {
+            quickReplyItems.unshift(match[1].trim());
+          }
+          i--;
+        }
+        
+        const lineMsg: any = { type: 'text', text: msg.content };
+        if (quickReplyItems.length > 0 && quickReplyItems.length <= 13) {
+           lineMsg.quickReply = {
+             items: quickReplyItems.map(item => ({
+               type: 'action',
+               action: { type: 'message', label: item.substring(0, 20), text: item }
+             }))
+           };
+        }
+        return lineMsg;
       }
       return { type: 'text', text: msg.content };
     });
@@ -100,10 +120,32 @@ export class LineChannelAdapter implements ChannelAdapter {
     const credentials = await this.getCredentials(tenantId);
     if (!credentials) return;
 
-    const lineMessages = messages.map((msg) => ({
-      type: 'text' as const,
-      text: msg.content,
-    }));
+    const lineMessages = messages.map((msg) => {
+      if (msg.type === 'text') {
+        const lines = msg.content.trim().split('\n');
+        const quickReplyItems: string[] = [];
+        let i = lines.length - 1;
+        while (i >= 0 && /^\d+\.\s+(.+)$/.test(lines[i].trim())) {
+          const match = lines[i].trim().match(/^\d+\.\s+(.+)$/);
+          if (match) {
+            quickReplyItems.unshift(match[1].trim());
+          }
+          i--;
+        }
+        
+        const lineMsg: any = { type: 'text', text: msg.content };
+        if (quickReplyItems.length > 0 && quickReplyItems.length <= 13) {
+           lineMsg.quickReply = {
+             items: quickReplyItems.map(item => ({
+               type: 'action',
+               action: { type: 'message', label: item.substring(0, 20), text: item }
+             }))
+           };
+        }
+        return lineMsg;
+      }
+      return { type: 'text', text: msg.content };
+    });
 
     await fetch('https://api.line.me/v2/bot/message/reply', {
       method: 'POST',
@@ -114,6 +156,26 @@ export class LineChannelAdapter implements ChannelAdapter {
       body: JSON.stringify({
         replyToken,
         messages: lineMessages.slice(0, 5),
+      }),
+    });
+  }
+
+  /**
+   * Send loading animation via LINE Messaging API.
+   */
+  async sendLoadingAnimation(tenantId: string, platformUserId: string, seconds = 20): Promise<void> {
+    const credentials = await this.getCredentials(tenantId);
+    if (!credentials) return;
+
+    await fetch('https://api.line.me/v2/bot/chat/loading/start', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${credentials.channelAccessToken}`,
+      },
+      body: JSON.stringify({
+        chatId: platformUserId,
+        loadingSeconds: seconds,
       }),
     });
   }

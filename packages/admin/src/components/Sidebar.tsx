@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import packageJson from '../../package.json';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '../lib/auth-context';
 import {
@@ -52,7 +53,7 @@ export default function Sidebar() {
         <div className="sidebar-logo-icon">🐻</div>
         <div>
           <div className="sidebar-logo-text">PPBears CS</div>
-          <div className="sidebar-logo-sub">Admin Panel v1.0</div>
+          <div className="sidebar-logo-sub">Admin Panel v{packageJson.version}</div>
         </div>
       </div>
 

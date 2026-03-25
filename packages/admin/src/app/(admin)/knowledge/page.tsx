@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../../../lib/api';
-import { BookOpen, Upload, Trash2, FileText, RefreshCw } from 'lucide-react';
+import { BookOpen, Upload, Trash2, FileText, RefreshCw, Edit2 } from 'lucide-react';
 
 interface KnowledgeDoc {
   id: string;
@@ -19,6 +19,8 @@ export default function KnowledgePage() {
   const [uploading, setUploading] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [form, setForm] = useState({ category: 'general', file: null as File | null });
+  const [editDoc, setEditDoc] = useState<{ id: string; content: string; filename: string } | null>(null);
+  const [saving, setSaving] = useState(false);
 
   async function fetchDocs() {
     setLoading(true);
@@ -49,6 +51,33 @@ export default function KnowledgePage() {
       alert('上傳失敗: ' + (err.message || 'Unknown error'));
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function handleEditClick(doc: KnowledgeDoc) {
+    try {
+      const { content } = await apiFetch<{ content: string }>(`/api/admin/knowledge/${doc.id}/content`);
+      // Fallback empty text if null
+      setEditDoc({ id: doc.id, content: content || '', filename: doc.filename });
+    } catch (err: any) {
+      alert('無法載入文件內容: ' + (err.message || 'Error'));
+    }
+  }
+
+  async function handleSaveEdit() {
+    if (!editDoc) return;
+    setSaving(true);
+    try {
+      await apiFetch(`/api/admin/knowledge/${editDoc.id}/content`, {
+        method: 'PUT',
+        body: JSON.stringify({ content: editDoc.content }),
+      });
+      setEditDoc(null);
+      fetchDocs();
+    } catch (err: any) {
+      alert('儲存失敗: ' + (err.message || 'Error'));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -131,7 +160,14 @@ export default function KnowledgePage() {
                     <td><span className="badge badge-muted">{doc.file_type}</span></td>
                     <td><span className={`badge ${statusBadge[doc.status] || 'badge-muted'}`}><span className="badge-dot" />{statusLabel[doc.status] || doc.status}</span></td>
                     <td className="text-sm">{new Date(doc.uploaded_at).toLocaleString('zh-TW')}</td>
-                    <td><button className="btn btn-danger btn-sm"><Trash2 size={13} /></button></td>
+                    <td>
+                      <button className="btn btn-ghost btn-sm" onClick={() => handleEditClick(doc)} title="編輯內容">
+                        <Edit2 size={13} />
+                      </button>
+                      <button className="btn btn-danger btn-sm" title="刪除">
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -158,6 +194,29 @@ export default function KnowledgePage() {
                 <button className="btn btn-ghost" onClick={() => setShowUpload(false)}>取消</button>
                 <button className="btn btn-primary" disabled={!form.file || uploading} onClick={handleUpload}>
                   {uploading ? '上傳中...' : '確認上傳'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {editDoc && (
+          <div className="modal-overlay" onClick={() => setEditDoc(null)}>
+            <div className="modal" onClick={e => e.stopPropagation()} style={{ width: '80%', maxWidth: '800px' }}>
+              <h3 className="modal-title">編輯文件：{editDoc.filename}</h3>
+              <div className="form-group">
+                <textarea 
+                  className="form-input" 
+                  style={{ height: '400px', resize: 'vertical', fontFamily: 'monospace' }}
+                  value={editDoc.content}
+                  onChange={e => setEditDoc({ ...editDoc, content: e.target.value })}
+                  placeholder="輸入或貼上文件純文字內容..."
+                />
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-ghost" onClick={() => setEditDoc(null)}>取消</button>
+                <button className="btn btn-primary" disabled={saving} onClick={handleSaveEdit}>
+                  {saving ? '儲存中...' : '儲存變更'}
                 </button>
               </div>
             </div>
