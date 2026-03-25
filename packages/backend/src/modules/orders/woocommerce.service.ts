@@ -94,21 +94,37 @@ export class WooCommerceService {
     }
 
     try {
-      // WooCommerce REST API does not support ?number= natively.
-      // Use search param and then confirm match by order.number field.
-      const url = `${creds.baseUrl}/wp-json/wc/v3/orders?search=${encodeURIComponent(orderNumber)}&per_page=10&${this.buildAuthQuery(creds.consumerKey, creds.consumerSecret)}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        const errBody = await res.text();
-        log.error({ tenantId, status: res.status, errBody }, 'WooCommerce findOrderByNumber HTTP error');
-        throw new Error(`WC API error: ${res.status}`);
+      // Approach 1: Try fetching directly by ID (which is the most common case for WC order numbers)
+      const directUrl = `${creds.baseUrl}/wp-json/wc/v3/orders/${encodeURIComponent(orderNumber)}?${this.buildAuthQuery(creds.consumerKey, creds.consumerSecret)}`;
+      const directRes = await fetch(directUrl);
+      
+      if (directRes.ok) {
+        const order = await directRes.json() as WooOrder;
+        log.info({ tenantId, orderNumber }, 'Found order directly by ID');
+        return order;
       }
-      const orders = await res.json() as WooOrder[];
-      // Match by order.number (string) or order.id (number)
+
+      // Approach 2: If direct ID fetch fails, fallback to search (for custom order numbers)
+      log.info({ tenantId, orderNumber, status: directRes.status }, 'Direct ID fetch failed, trying search fallback');
+      const searchUrl = `${creds.baseUrl}/wp-json/wc/v3/orders?search=${encodeURIComponent(orderNumber)}&per_page=10&${this.buildAuthQuery(creds.consumerKey, creds.consumerSecret)}`;
+      const searchRes = await fetch(searchUrl);
+      
+      if (!searchRes.ok) {
+        throw new Error(`WC API search error: ${searchRes.status}`);
+      }
+      
+      const orders = await searchRes.json() as WooOrder[];
       const matched = orders.find(o =>
         String(o.number) === String(orderNumber) || String(o.id) === String(orderNumber)
       );
-      return matched || null;
+      
+      if (matched) {
+        log.info({ tenantId, orderNumber }, 'Found order via search fallback');
+        return matched;
+      }
+
+      log.warn({ tenantId, orderNumber }, 'Order not found in WooCommerce');
+      return null;
     } catch (err: any) {
       log.error({ tenantId, err: err.message }, 'WooCommerce findOrderByNumber failed');
       return null;
