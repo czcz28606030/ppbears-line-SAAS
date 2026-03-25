@@ -7,6 +7,7 @@ import { logger } from './utils/logger.js';
 import { webhookRoutes } from './channels/webhook.routes.js';
 import { adminRoutes } from './routes/admin.routes.js';
 import { tenantAdminRoutes } from './routes/tenant.routes.js';
+import { startKeepAlive } from './utils/keep-alive.js';
 
 async function buildApp() {
   const app = Fastify({
@@ -54,6 +55,8 @@ async function start() {
     const app = await buildApp();
     await app.listen({ port: config.port, host: config.host });
     logger.info(`🚀 PPBears CS Backend running on http://${config.host}:${config.port}`);
+    // Start keep-alive to prevent Render Free tier hibernation
+    startKeepAlive(config.port);
   } catch (err) {
     logger.fatal(err, 'Failed to start server');
     process.exit(1);
