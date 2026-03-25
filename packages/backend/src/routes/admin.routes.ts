@@ -344,5 +344,40 @@ export async function adminRoutes(app: FastifyInstance) {
       const results = await productService.searchProducts(tenantId, q);
       return { products: results };
     });
+
+    // ── Product URL Allowlist ────────────────────────────────────────────────
+
+    protectedApp.get('/products/allowlist', async (request: FastifyRequest) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const db = getSupabaseAdmin();
+      const { data } = await db
+        .from('product_url_allowlist')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: false });
+      return { allowlist: data || [] };
+    });
+
+    protectedApp.post('/products/allowlist', async (request: FastifyRequest, reply: FastifyReply) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const { url, note } = request.body as { url: string; note?: string };
+      if (!url) return reply.status(400).send({ error: '請提供產品 URL' });
+      const db = getSupabaseAdmin();
+      const { data, error } = await db
+        .from('product_url_allowlist')
+        .insert({ tenant_id: tenantId, url, note: note || '' })
+        .select()
+        .single();
+      if (error) return reply.status(400).send({ error: error.message });
+      return { item: data };
+    });
+
+    protectedApp.delete<{ Params: { id: string } }>('/products/allowlist/:id', async (request: FastifyRequest, reply: FastifyReply) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const { id } = (request as any).params;
+      const db = getSupabaseAdmin();
+      await db.from('product_url_allowlist').delete().eq('id', id).eq('tenant_id', tenantId);
+      return reply.status(204).send();
+    });
   });
 }

@@ -44,7 +44,36 @@ export class ProductService {
   }
 
   /**
-   * Pull all products from WooCommerce and upsert into product_index.
+   * Fetch the URL allowlist for this tenant from Supabase.
+   */
+  private async getAllowlistUrls(tenantId: string): Promise<string[]> {
+    const db = getSupabaseAdmin();
+    const { data } = await db
+      .from('product_url_allowlist')
+      .select('url')
+      .eq('tenant_id', tenantId);
+    return data?.map((r) => r.url) || [];
+  }
+
+  /**
+   * Try to extract WooCommerce product ID from a permalink URL.
+   * WooCommerce URLs usually contain /?p=<id> or /shop/<slug>/.
+   */
+  private extractSlugFromUrl(url: string): string | null {
+    try {
+      const u = new URL(url);
+      // e.g. https://ppbears.com/product/water-crystal-case/
+      const segments = u.pathname.split('/').filter(Boolean);
+      // Last meaningful segment is usually the slug
+      return segments[segments.length - 1] || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Pull products from WooCommerce and upsert into product_index.
+   * If the URL allowlist is non-empty, only those URLs/slugs are synced.
    */
   async syncProducts(tenantId: string): Promise<{ synced: number; errors: number }> {
     const creds = await this.getCredentials(tenantId);
@@ -54,9 +83,12 @@ export class ProductService {
     }
 
     const db = getSupabaseAdmin();
-    let page = 1;
     let synced = 0;
     let errors = 0;
+
+    // ── Allowlist mode ────────────────────────────────────────────────────────
+    const allowlistUrls = await this.getAllowlistUrls(tenantId);
+    const useAllowlist = allowlistUrls.length > 0;
 
     // Create sync job
     const { data: job } = await db.from('sync_jobs').insert({
@@ -66,48 +98,79 @@ export class ProductService {
       started_at: new Date().toISOString(),
     }).select().single();
 
+    const upsertProduct = async (p: WooProduct) => {
+      const phoneAttr = p.attributes.find(a =>
+        a.name.includes('型號') || a.name.includes('手機') || a.name.toLowerCase().includes('model')
+      );
+      const phoneModels = phoneAttr?.options.join(', ') || '';
+
+      await db.from('product_index').upsert({
+        tenant_id: tenantId,
+        woo_product_id: p.id,
+        name: p.name,
+        slug: p.slug,
+        categories: p.categories.map(c => c.name).join(', '),
+        tags: p.tags.map(t => t.name).join(', '),
+        price: p.price,
+        url: p.permalink,
+        image_url: p.images[0]?.src || '',
+        phone_models: phoneModels,
+        status: 'active',
+        synced_at: new Date().toISOString(),
+      }, { onConflict: 'tenant_id,woo_product_id' });
+
+      synced++;
+    };
+
     try {
-      while (true) {
-        const url = `${creds.baseUrl}/wp-json/wc/v3/products?per_page=100&page=${page}&consumer_key=${creds.consumerKey}&consumer_secret=${creds.consumerSecret}&status=publish`;
-        const res = await fetch(url);
-        if (!res.ok) break;
-        const products = await res.json() as WooProduct[];
-        if (!products.length) break;
+      if (useAllowlist) {
+        // ── Allowlist sync: fetch each product by slug ─────────────────────
+        log.info({ tenantId, count: allowlistUrls.length }, 'Starting allowlist-mode product sync');
 
-        for (const p of products) {
+        for (const url of allowlistUrls) {
+          const slug = this.extractSlugFromUrl(url);
+          if (!slug) { errors++; continue; }
+
           try {
-            // Extract phone model attributes
-            const phoneAttr = p.attributes.find(a => 
-              a.name.includes('型號') || a.name.includes('手機') || a.name.toLowerCase().includes('model')
-            );
-            const phoneModels = phoneAttr?.options.join(', ') || '';
-
-            await db.from('product_index').upsert({
-              tenant_id: tenantId,
-              woo_product_id: p.id,
-              name: p.name,
-              slug: p.slug,
-              categories: p.categories.map(c => c.name).join(', '),
-              tags: p.tags.map(t => t.name).join(', '),
-              price: p.price,
-              url: p.permalink,
-              image_url: p.images[0]?.src || '',
-              phone_models: phoneModels,
-              status: 'active',
-              synced_at: new Date().toISOString(),
-            }, { onConflict: 'tenant_id,woo_product_id' });
-
-            synced++;
+            // Try fetching by slug
+            const apiUrl = `${creds.baseUrl}/wp-json/wc/v3/products?slug=${encodeURIComponent(slug)}&consumer_key=${creds.consumerKey}&consumer_secret=${creds.consumerSecret}`;
+            const res = await fetch(apiUrl);
+            if (!res.ok) { errors++; continue; }
+            const results = await res.json() as WooProduct[];
+            if (results.length > 0) {
+              await upsertProduct(results[0]);
+            } else {
+              log.warn({ tenantId, url, slug }, 'Allowlist URL: product not found by slug');
+              errors++;
+            }
           } catch (err: any) {
-            log.error({ tenantId, productId: p.id, err: err.message }, 'Failed to sync product');
+            log.error({ tenantId, url, err: err.message }, 'Allowlist product fetch failed');
             errors++;
           }
         }
+      } else {
+        // ── Full sync: paginate all published products ─────────────────────
+        log.info({ tenantId }, 'Starting full product sync');
+        let page = 1;
+        while (true) {
+          const apiUrl = `${creds.baseUrl}/wp-json/wc/v3/products?per_page=100&page=${page}&consumer_key=${creds.consumerKey}&consumer_secret=${creds.consumerSecret}&status=publish`;
+          const res = await fetch(apiUrl);
+          if (!res.ok) break;
+          const products = await res.json() as WooProduct[];
+          if (!products.length) break;
 
-        page++;
+          for (const p of products) {
+            try {
+              await upsertProduct(p);
+            } catch (err: any) {
+              log.error({ tenantId, productId: p.id, err: err.message }, 'Failed to sync product');
+              errors++;
+            }
+          }
+          page++;
+        }
       }
 
-      // Update job status
       if (job) {
         await db.from('sync_jobs').update({
           status: 'completed',
@@ -116,7 +179,7 @@ export class ProductService {
         }).eq('id', job.id);
       }
 
-      log.info({ tenantId, synced, errors }, 'Product sync completed');
+      log.info({ tenantId, synced, errors, mode: useAllowlist ? 'allowlist' : 'full' }, 'Product sync completed');
     } catch (err: any) {
       if (job) {
         await db.from('sync_jobs').update({
@@ -153,16 +216,12 @@ export class ProductService {
 
   /**
    * Determine if a message is asking about products.
-   * Wide net: catches 訂製/客製化/想買/買殼 etc.
    */
   isProductQueryIntent(text: string): boolean {
     const keywords = [
-      // 明確產品字眼
       '手機殼', '殼', '款式', '産品', '產品', '有什麼', '推薦', '適合', '型號',
       '要怎麼買', '哪裡買', '在哪買', '怎麼購買',
-      // 訂製/客製相關
       '訂製', '訂做', '客製', '客制', '想訂', '想做', '幫我做',
-      // 購買意圖
       '想要', '想買', '購買', '要買', '我要', '幫我找', '有沒有',
     ];
     return keywords.some(kw => text.includes(kw));
@@ -170,10 +229,8 @@ export class ProductService {
 
   /**
    * Extract the most useful search keyword from a customer message.
-   * Strips common filler phrases to focus on the phone model / product name.
    */
   extractSearchKeyword(text: string): string {
-    // Remove common filler phrases to get the core keyword
     const fillers = [
       '我想要', '我想', '幫我', '我要', '請問', '有沒有', '有嗎', '可以嗎',
       '訂製', '訂做', '客製化', '客製', '客制', '手機殼', '殼', '款式', '推薦',
