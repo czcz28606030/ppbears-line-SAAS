@@ -72,6 +72,35 @@ export class ProductService {
   }
 
   /**
+   * Recursively collect a category ID and all its descendant category IDs.
+   * This ensures products in sub-subcategories (e.g. iPhone 15 under iPhone > Apple)
+   * are also captured.
+   */
+  private async getAllCategoryIds(
+    baseUrl: string,
+    consumerKey: string,
+    consumerSecret: string,
+    parentId: number,
+    depth = 0
+  ): Promise<number[]> {
+    if (depth > 5) return []; // safety cap
+    const ids: number[] = [parentId];
+    try {
+      // Fetch subcategories of this parent
+      const apiUrl = `${baseUrl}/wp-json/wc/v3/products/categories?parent=${parentId}&per_page=100&consumer_key=${consumerKey}&consumer_secret=${consumerSecret}`;
+      const res = await fetch(apiUrl);
+      if (!res.ok) return ids;
+      const subs = await res.json() as Array<{ id: number }>;
+      if (!Array.isArray(subs) || !subs.length) return ids;
+      for (const sub of subs) {
+        const childIds = await this.getAllCategoryIds(baseUrl, consumerKey, consumerSecret, sub.id, depth + 1);
+        ids.push(...childIds);
+      }
+    } catch { /* ignore errors, return what we have */ }
+    return ids;
+  }
+
+  /**
    * Pull products from WooCommerce and upsert into product_index.
    * If the URL allowlist is non-empty, only those URLs/slugs are synced.
    */
@@ -145,27 +174,36 @@ export class ProductService {
               const catRes = await fetch(catApiUrl);
               if (!catRes.ok) { errors++; continue; }
               const cats = await catRes.json() as Array<{ id: number; name: string }>;
-              if (!cats.length) {
+              if (!Array.isArray(cats) || !cats.length) {
                 log.warn({ tenantId, url, catSlug }, 'Category not found by slug');
                 errors++;
                 continue;
               }
               const categoryId = cats[0].id;
 
-              // Step 2: Paginate all products in this category
-              let catPage = 1;
-              while (true) {
-                const prodUrl = `${creds.baseUrl}/wp-json/wc/v3/products?category=${categoryId}&per_page=100&page=${catPage}&status=publish&consumer_key=${creds.consumerKey}&consumer_secret=${creds.consumerSecret}`;
-                const prodRes = await fetch(prodUrl);
-                if (!prodRes.ok) break;
-                const catProducts = await prodRes.json() as WooProduct[];
-                if (!catProducts.length) break;
-                for (const p of catProducts) {
-                  try { await upsertProduct(p); } catch (err: any) { errors++; }
+              // Step 2: Recursively collect ALL descendant category IDs
+              const allCategoryIds = await this.getAllCategoryIds(
+                creds.baseUrl, creds.consumerKey, creds.consumerSecret, categoryId
+              );
+              log.info({ tenantId, catSlug, categoryId, totalCategories: allCategoryIds.length }, 'Fetched all category IDs (including subcategories)');
+
+              // Step 3: For each category ID, paginate and sync all products
+              for (const catId of allCategoryIds) {
+                let catPage = 1;
+                while (true) {
+                  const prodUrl = `${creds.baseUrl}/wp-json/wc/v3/products?category=${catId}&per_page=100&page=${catPage}&status=publish&consumer_key=${creds.consumerKey}&consumer_secret=${creds.consumerSecret}`;
+                  const prodRes = await fetch(prodUrl);
+                  if (!prodRes.ok) break;
+                  const catProducts = await prodRes.json();
+                  // Guard: WooCommerce may return an error object instead of array on last page
+                  if (!Array.isArray(catProducts) || !catProducts.length) break;
+                  for (const p of catProducts as WooProduct[]) {
+                    try { await upsertProduct(p); } catch (err: any) { errors++; }
+                  }
+                  catPage++;
                 }
-                catPage++;
               }
-              log.info({ tenantId, catSlug, categoryId }, 'Category sync complete');
+              log.info({ tenantId, catSlug, categoryId, allCategoryIds: allCategoryIds.length }, 'Category (recursive) sync complete');
 
             } else {
               // ── Product URL: sync single product by slug ──────────────────
