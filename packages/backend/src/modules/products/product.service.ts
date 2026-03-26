@@ -294,15 +294,27 @@ export class ProductService {
 
   /**
    * Determine if a message is asking about products.
+   * Detects both shopping intent keywords AND bare phone model mentions.
    */
   isProductQueryIntent(text: string): boolean {
-    const keywords = [
+    const intentKeywords = [
       '手機殼', '殼', '款式', '産品', '產品', '有什麼', '推薦', '適合', '型號',
       '要怎麼買', '哪裡買', '在哪買', '怎麼購買',
       '訂製', '訂做', '客製', '客制', '想訂', '想做', '幫我做',
       '想要', '想買', '購買', '要買', '我要', '幫我找', '有沒有',
     ];
-    return keywords.some(kw => text.includes(kw));
+    if (intentKeywords.some(kw => text.includes(kw))) return true;
+
+    // Also detect bare phone model mentions (e.g. "17 PRO", "iPhone 16 Plus", "S25 Ultra")
+    const modelPatterns = [
+      /iphone\s*\d/i,
+      /\bipad\b/i,
+      /galaxy\s*(s|a|z)\d/i,
+      /pixel\s*\d/i,
+      /\b\d{1,2}\s*(pro|plus|ultra|max|mini)\b/i,  // e.g. "17 PRO", "15 Plus"
+      /xiaomi|oppo|vivo|realme|huawei|sony|lg|htc|asus|nokia/i,
+    ];
+    return modelPatterns.some(p => p.test(text));
   }
 
   /**
@@ -320,7 +332,7 @@ export class ProductService {
   }
 
   /**
-   * Format product results as a LINE message.
+   * Format product results as plain LINE message text.
    */
   formatProducts(products: Array<{ name: string; price: string; url: string; categories: string }>): string {
     if (!products.length) return '目前沒有找到相符的產品，請輸入「真人」詢問客服人員。';
@@ -328,6 +340,18 @@ export class ProductService {
       `${i + 1}. ${p.name}\n   💰 NT$${p.price}\n   🔗 ${p.url}`
     );
     return `🐻 以下是為您找到的相關產品：\n\n${lines.join('\n\n')}`;
+  }
+
+  /**
+   * Format product results as structured context for injection into the LLM system prompt.
+   * This allows the AI to craft a natural response citing real product data.
+   */
+  formatProductsAsAiContext(products: Array<{ name: string; price: string; url: string; categories: string }>): string {
+    if (!products.length) return '';
+    const lines = products.map((p, i) =>
+      `[${i + 1}] 商品名稱: ${p.name} | 價格: NT$${p.price} | 分類: ${p.categories} | 連結: ${p.url}`
+    );
+    return `\n\n以下是從最新產品索引中找到的相符商品（請優先使用這些資料回答，連結請完整引用）：\n${lines.join('\n')}`;
   }
 }
 

@@ -127,22 +127,14 @@ export class Orchestrator {
         return;
       }
 
-      // --- Phase 2: Product search intent ---
+      // --- Phase 2: Product search intent — inject results into AI context ---
+      let productAiContext = '';
       if (productService.isProductQueryIntent(mergedContent)) {
         const searchKeyword = productService.extractSearchKeyword(mergedContent);
-        const products = await productService.searchProducts(tenantId, searchKeyword);
+        const products = await productService.searchProducts(tenantId, searchKeyword, 5);
         if (products.length > 0) {
-          const productReply = productService.formatProducts(products);
-          const adapter = channelRegistry.get(replyCtx.channelType);
-          if (adapter) {
-            if (replyCtx.replyToken && adapter.sendReplyWithToken) {
-              await adapter.sendReplyWithToken(tenantId, replyCtx.replyToken, [{ type: 'text', content: productReply }]);
-            } else {
-              await adapter.sendReply(tenantId, replyCtx.platformUserId, [{ type: 'text', content: productReply }]);
-            }
-          }
-          await conversationService.saveMessage(tenantId, conversationId, 'assistant', productReply);
-          return;
+          productAiContext = productService.formatProductsAsAiContext(products);
+          log.info({ tenantId, searchKeyword, found: products.length }, 'Product search context injected into AI prompt');
         }
       }
 
@@ -152,8 +144,8 @@ export class Orchestrator {
         ? `\n\n以下是從知識庫擷取的相關參考資料：\n${kbChunks.map((c, i) => `[${i + 1}] ${c}`).join('\n')}`
         : '';
 
-      // Get tenant system prompt
-      const systemPrompt = await this.getSystemPrompt(tenantId) + kbContext;
+      // Get tenant system prompt — inject product context FIRST so AI treats it as authoritative
+      const systemPrompt = await this.getSystemPrompt(tenantId) + productAiContext + kbContext;
 
       // Build LLM request
       const messages: ChatMessage[] = [
