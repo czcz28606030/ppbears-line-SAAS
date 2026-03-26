@@ -17,8 +17,15 @@ async function buildApp() {
   });
 
   // ---- Plugins ----
+  const allowedOrigins = process.env.ADMIN_PANEL_URL
+    ? [process.env.ADMIN_PANEL_URL, 'http://localhost:3001', 'http://localhost:3000']
+    : (() => {
+        logger.warn('[SECURITY] ADMIN_PANEL_URL not set — CORS is open to all origins. Set this env var in production!');
+        return '*' as const;
+      })();
+
   await app.register(cors, {
-    origin: process.env.ADMIN_PANEL_URL || '*',
+    origin: allowedOrigins,
     credentials: true,
   });
 

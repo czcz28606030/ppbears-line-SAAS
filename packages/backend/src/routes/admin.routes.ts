@@ -7,6 +7,7 @@ import { liveAgentService } from '../modules/live-agent/live-agent.service.js';
 import { productService } from '../modules/products/product.service.js';
 import { knowledgeBaseService } from '../modules/knowledge/knowledge-base.service.js';
 import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 
 const log = createLogger({ module: 'AdminAPI' });
 
@@ -27,9 +28,25 @@ export async function adminRoutes(app: FastifyInstance) {
       return reply.status(401).send({ error: '帳號或密碼錯誤' });
     }
 
-    // Verify password (using simple hash for now — upgrade to bcrypt in production)
-    const hash = crypto.createHash('sha256').update(password).digest('hex');
-    if (hash !== user.password_hash) {
+    // --- Password verification with auto-migration from SHA-256 → bcrypt ---
+    let passwordValid = false;
+
+    if (user.password_hash?.startsWith('$2')) {
+      // Already bcrypt — verify directly
+      passwordValid = await bcrypt.compare(password, user.password_hash);
+    } else {
+      // Legacy SHA-256 hash — compare and auto-upgrade to bcrypt on success
+      const sha256Hash = crypto.createHash('sha256').update(password).digest('hex');
+      if (sha256Hash === user.password_hash) {
+        passwordValid = true;
+        // Upgrade to bcrypt silently
+        const newHash = await bcrypt.hash(password, 12);
+        await db.from('tenant_admin_users').update({ password_hash: newHash }).eq('id', user.id);
+        log.info({ userId: user.id }, 'Password hash upgraded from SHA-256 to bcrypt');
+      }
+    }
+
+    if (!passwordValid) {
       return reply.status(401).send({ error: '帳號或密碼錯誤' });
     }
 
