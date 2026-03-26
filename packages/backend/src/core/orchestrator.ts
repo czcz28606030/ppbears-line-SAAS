@@ -167,7 +167,8 @@ export class Orchestrator {
         .single();
       
       let finalReplyContent = llmResponse.content;
-      if (footerSet?.value) {
+      // Only append the footer if the AI hasn't already included it (prevents double footer)
+      if (footerSet?.value && !finalReplyContent.includes(footerSet.value.trim())) {
         finalReplyContent += `\n\n${footerSet.value}`;
       }
 
