@@ -6,7 +6,8 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '../lib/auth-context';
 import {
   LayoutDashboard, Bot, BookOpen, MessageSquare, Headphones,
-  Package, Settings, PlugZap, Users, ClipboardList, LogOut, BarChart2, FlaskConical, ShieldAlert,
+  Package, Settings, PlugZap, Users, ClipboardList, LogOut,
+  BarChart2, FlaskConical, ShieldAlert, X,
 } from 'lucide-react';
 
 const navItems = [
@@ -45,18 +46,36 @@ const navItems = [
   },
 ];
 
-export default function Sidebar() {
+interface SidebarProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${isOpen ? 'mobile-open' : ''}`}>
       <div className="sidebar-logo">
         <div className="sidebar-logo-icon">🐻</div>
-        <div>
+        <div style={{ flex: 1 }}>
           <div className="sidebar-logo-text">PPBears CS</div>
           <div className="sidebar-logo-sub">Admin Panel v{packageJson.version}</div>
         </div>
+        {/* X close button — visible only on mobile when sidebar is open */}
+        <button
+          onClick={onClose}
+          style={{
+            background: 'none', border: 'none', color: 'var(--text-muted)',
+            cursor: 'pointer', padding: 4, borderRadius: 6, display: 'flex',
+            alignItems: 'center',
+          }}
+          className="sidebar-close-btn"
+          aria-label="關閉選單"
+        >
+          <X size={20} />
+        </button>
       </div>
 
       {navItems.map((section) => (
