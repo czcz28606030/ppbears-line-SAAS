@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { apiFetch, getToken } from '../../../lib/api';
-import { Package, RefreshCw, ExternalLink, Plus, Trash2, Link } from 'lucide-react';
+import { Package, RefreshCw, ExternalLink, Plus, Trash2, Link, ChevronUp, ChevronDown } from 'lucide-react';
 
 interface Product {
   id: string;
@@ -33,8 +33,28 @@ export default function ProductsPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [syncResult, setSyncResult] = useState<{ count: number; time: string } | null>(null);
+  const [sortColumn, setSortColumn] = useState<keyof Product>('categories');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+
+  const sortedProducts = useMemo(() => {
+    return [...products].sort((a, b) => {
+      const aVal = String(a[sortColumn] ?? '').toLowerCase();
+      const bVal = String(b[sortColumn] ?? '').toLowerCase();
+      return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+    });
+  }, [products, sortColumn, sortDir]);
+
+  function handleSort(col: keyof Product) {
+    if (col === sortColumn) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortColumn(col); setSortDir('asc'); }
+  }
+
+  function SortIcon({ col }: { col: keyof Product }) {
+    if (col !== sortColumn) return <ChevronUp size={12} style={{ opacity: 0.2 }} />;
+    return sortDir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />;
+  }
 
   async function fetchProducts() {
     try {
@@ -280,16 +300,22 @@ export default function ProductsPage() {
             <table>
               <thead>
                 <tr>
-                  <th>商品名稱</th>
-                  <th>分類</th>
-                  <th>支援機型</th>
-                  <th>價格</th>
-                  <th>上次同步</th>
+                  {([['name', '商品名稱'], ['categories', '分類'], ['phone_models', '支援機型'], ['price', '價格'], ['synced_at', '上次同步']] as [keyof Product, string][]).map(([col, label]) => (
+                    <th
+                      key={col}
+                      onClick={() => handleSort(col)}
+                      style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        {label} <SortIcon col={col} />
+                      </span>
+                    </th>
+                  ))}
                   <th>連結</th>
                 </tr>
               </thead>
               <tbody>
-                {products.map((p) => (
+                {sortedProducts.map((p) => (
                   <tr key={p.id}>
                     <td style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{p.name}</td>
                     <td className="text-sm">{p.categories}</td>
