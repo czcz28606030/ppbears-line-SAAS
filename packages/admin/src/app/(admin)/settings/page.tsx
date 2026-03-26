@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../../../lib/api';
-import { Settings, Save } from 'lucide-react';
+import { Settings, Save, Wifi, WifiOff } from 'lucide-react';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Record<string, string>>({
@@ -17,6 +17,8 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [wooTest, setWooTest] = useState<{ ok: boolean; diagnosis?: any; error?: string } | null>(null);
+  const [wooTesting, setWooTesting] = useState(false);
 
   useEffect(() => {
     apiFetch<{ settings: Array<{ key: string; value: string }> }>('/api/admin/settings')
@@ -39,16 +41,56 @@ export default function SettingsPage() {
     finally { setSaving(false); }
   }
 
+  async function testWooConnection() {
+    setWooTesting(true);
+    setWooTest(null);
+    try {
+      const result = await apiFetch<any>('/api/admin/woo/test-connection');
+      setWooTest(result);
+    } catch (err: any) {
+      setWooTest({ ok: false, error: err.message });
+    } finally {
+      setWooTesting(false);
+    }
+  }
+
   if (loading) return <div className="loading-center"><div className="loading-spinner" /></div>;
 
   const sections = [
     {
       title: '🛒 WooCommerce 設定',
       fields: [
-        { key: 'woo_base_url', label: '商店基本 URL', placeholder: 'https://ppbears.com', type: 'text' },
-        { key: 'woo_consumer_key', label: 'Consumer Key', placeholder: 'ck_...', type: 'password' },
-        { key: 'woo_consumer_secret', label: 'Consumer Secret', placeholder: 'cs_...', type: 'password' },
+        { key: 'woo_base_url', label: '商店基本 URL（必填）', placeholder: 'https://ppbears.com', type: 'text' },
+        { key: 'woo_consumer_key', label: 'Consumer Key（ck_...）', placeholder: 'ck_...', type: 'text' },
+        { key: 'woo_consumer_secret', label: 'Consumer Secret（cs_...）', placeholder: 'cs_...', type: 'text' },
       ],
+      extra: (
+        <div style={{ marginTop: 12 }}>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={testWooConnection}
+            disabled={wooTesting}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            {wooTesting ? '測試中...' : <><Wifi size={14} /> 測試 WooCommerce 連線</>}
+          </button>
+
+          {wooTest && (
+            <div style={{
+              marginTop: 12, padding: '12px 16px', borderRadius: 10, fontSize: 12,
+              fontFamily: 'monospace', whiteSpace: 'pre-wrap',
+              background: wooTest.ok ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+              border: `1px solid ${wooTest.ok ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)'}`,
+              color: wooTest.ok ? '#4ade80' : '#f87171',
+              overflowX: 'auto',
+            }}>
+              {wooTest.ok
+                ? `✅ WooCommerce 連線成功\n\n${JSON.stringify(wooTest.diagnosis, null, 2)}`
+                : `❌ 連線失敗\n錯誤：${wooTest.error || '未知錯誤'}\n\n診斷資訊：\n${JSON.stringify(wooTest.diagnosis, null, 2)}`}
+            </div>
+          )}
+        </div>
+      ),
     },
     {
       title: '⚙️ 行為設定',
@@ -113,6 +155,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
               ))}
+              {(section as any).extra}
             </div>
           ))}
         </div>

@@ -88,6 +88,81 @@ export async function adminRoutes(app: FastifyInstance) {
       };
     });
 
+    // WooCommerce diagnostic endpoints
+    protectedApp.get('/woo/test-connection', async (request: FastifyRequest) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const db = getSupabaseAdmin();
+      const { data } = await db
+        .from('tenant_settings')
+        .select('key, value')
+        .eq('tenant_id', tenantId)
+        .in('key', ['woo_base_url', 'woo_consumer_key', 'woo_consumer_secret']);
+
+      const settings: Record<string, string> = {};
+      for (const row of data || []) settings[row.key] = row.value;
+
+      const baseUrl = settings['woo_base_url'];
+      const consumerKey = settings['woo_consumer_key'];
+      const consumerSecret = settings['woo_consumer_secret'];
+
+      const diagnosis: Record<string, any> = {
+        woo_base_url: baseUrl ? `✅ 已設定 (${baseUrl})` : '❌ 未設定',
+        woo_consumer_key: consumerKey ? `✅ 已設定 (${consumerKey.substring(0, 8)}...)` : '❌ 未設定',
+        woo_consumer_secret: consumerSecret ? `✅ 已設定` : '❌ 未設定',
+      };
+
+      if (!baseUrl || !consumerKey || !consumerSecret) {
+        return { ok: false, diagnosis, error: '三個欄位皆必須填寫' };
+      }
+
+      try {
+        const url = `${baseUrl.replace(/\/$/, '')}/wp-json/wc/v3/orders?per_page=1&consumer_key=${consumerKey}&consumer_secret=${consumerSecret}`;
+        const res = await fetch(url);
+        const body = await res.text().catch(() => '');
+        diagnosis.api_status = res.status;
+        diagnosis.api_ok = res.ok;
+        diagnosis.api_response_preview = body.substring(0, 200);
+        return { ok: res.ok, diagnosis };
+      } catch (err: any) {
+        return { ok: false, diagnosis, error: err.message };
+      }
+    });
+
+    protectedApp.get<{ Querystring: { order: string } }>('/woo/test-order', async (request: FastifyRequest<{ Querystring: { order: string } }>) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const { order } = request.query;
+      const db = getSupabaseAdmin();
+      const { data } = await db
+        .from('tenant_settings')
+        .select('key, value')
+        .eq('tenant_id', tenantId)
+        .in('key', ['woo_base_url', 'woo_consumer_key', 'woo_consumer_secret']);
+
+      const settings: Record<string, string> = {};
+      for (const row of data || []) settings[row.key] = row.value;
+
+      const baseUrl = settings['woo_base_url']?.replace(/\/$/, '');
+      const ck = settings['woo_consumer_key'];
+      const cs = settings['woo_consumer_secret'];
+
+      if (!baseUrl || !ck || !cs) return { ok: false, error: 'WooCommerce 憑證未設定' };
+
+      const directUrl = `${baseUrl}/wp-json/wc/v3/orders/${order}?consumer_key=${ck}&consumer_secret=${cs}`;
+      const searchUrl = `${baseUrl}/wp-json/wc/v3/orders?search=${order}&per_page=5&consumer_key=${ck}&consumer_secret=${cs}`;
+
+      const [directRes, searchRes] = await Promise.all([fetch(directUrl), fetch(searchUrl)]);
+      const directBody = await directRes.json().catch(() => null);
+      const searchBody = await searchRes.json().catch(() => null);
+
+      return {
+        ok: true,
+        directStatus: directRes.status,
+        directResult: directBody,
+        searchStatus: searchRes.status,
+        searchResult: searchBody,
+      };
+    });
+
     // Conversations
     protectedApp.get('/conversations', async (request: FastifyRequest) => {
       const tenantId = (request as any).jwtUser.tenantId;
