@@ -321,8 +321,7 @@ export async function adminRoutes(app: FastifyInstance) {
         .from('product_index')
         .select('*')
         .eq('tenant_id', tenantId)
-        .order('synced_at', { ascending: false })
-        .limit(200);
+        .order('synced_at', { ascending: false });
       return { products: data || [] };
     });
 
