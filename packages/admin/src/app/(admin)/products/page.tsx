@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { apiFetch } from '../../../lib/api';
+import { apiFetch, getToken } from '../../../lib/api';
 import { Package, RefreshCw, ExternalLink, Plus, Trash2, Link } from 'lucide-react';
 
 interface Product {
@@ -49,9 +49,20 @@ export default function ProductsPage() {
   async function triggerSync() {
     setSyncing(true);
     try {
-      await apiFetch('/api/admin/products/sync', { method: 'POST' });
-      setTimeout(() => { fetchProducts(); fetchAllowlist(); }, 2000);
-    } catch (err: any) { alert(err.message); }
+      // Use raw fetch to avoid Content-Type header being sent when there's no body
+      const token = getToken();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/admin/products/sync`, {
+        method: 'POST',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Request failed' }));
+        throw new Error((err as any).message || (err as any).error || 'Request failed');
+      }
+      // Wait 8 seconds for async sync to finish, then refresh
+      setTimeout(() => { fetchProducts(); }, 8000);
+      setTimeout(() => { fetchProducts(); }, 20000); // second refresh for large categories
+    } catch (err: any) { alert('同步失敗：' + err.message); }
     finally { setSyncing(false); }
   }
 
@@ -73,7 +84,16 @@ export default function ProductsPage() {
   async function removeFromAllowlist(id: string) {
     if (!confirm('確定要從白名單中移除此 URL？')) return;
     try {
-      await apiFetch(`/api/admin/products/allowlist/${id}`, { method: 'DELETE' });
+      // Use raw fetch to avoid Content-Type header being sent when there's no body
+      const token = getToken();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/admin/products/allowlist/${id}`, {
+        method: 'DELETE',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Request failed' }));
+        throw new Error((err as any).error || 'Request failed');
+      }
       setAllowlist(prev => prev.filter(item => item.id !== id));
     } catch (err: any) { alert('刪除失敗：' + err.message); }
   }
