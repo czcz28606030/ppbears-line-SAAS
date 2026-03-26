@@ -117,8 +117,34 @@ export class ConversationService {
     }
 
     const { data, count } = await query;
-    return { conversations: data || [], total: count || 0 };
+    const conversations = data || [];
+
+    // Fetch live_agent_sessions for live_agent conversations to detect permanent sessions
+    const liveConvIds = conversations.filter(c => c.status === 'live_agent').map(c => c.id);
+    const permanentSet = new Set<string>();
+
+    if (liveConvIds.length > 0) {
+      const { data: liveSessions } = await db
+        .from('live_agent_sessions')
+        .select('conversation_id, expires_at')
+        .in('conversation_id', liveConvIds)
+        .is('released_at', null);
+
+      for (const s of liveSessions || []) {
+        if (s.expires_at && new Date(s.expires_at).getFullYear() >= 2099) {
+          permanentSet.add(s.conversation_id);
+        }
+      }
+    }
+
+    const enriched = conversations.map(c => ({
+      ...c,
+      is_permanent: permanentSet.has(c.id),
+    }));
+
+    return { conversations: enriched, total: count || 0 };
   }
+
 }
 
 export const conversationService = new ConversationService();

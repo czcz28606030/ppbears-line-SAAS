@@ -8,6 +8,7 @@ interface Conversation {
   id: string;
   channel_type: string;
   status: string;
+  is_permanent?: boolean;
   last_message_at: string;
   started_at: string;
   users?: { display_name: string; unified_user_id: string };
@@ -47,7 +48,7 @@ export default function ConversationsPage() {
     setToggling(t => ({ ...t, [convId + '_perm']: true }));
     try {
       await apiFetch(`/api/admin/conversations/${convId}/takeover`, { method: 'POST', body: JSON.stringify({ permanent: true }) });
-      setConversations(prev => prev.map(c => c.id === convId ? { ...c, status: 'live_agent' } : c));
+      setConversations(prev => prev.map(c => c.id === convId ? { ...c, status: 'live_agent', is_permanent: true } : c));
     } catch (err: any) { alert('永久接管失敗：' + err.message); }
     finally { setToggling(t => ({ ...t, [convId + '_perm']: false })); }
   }
@@ -62,8 +63,7 @@ export default function ConversationsPage() {
   }
 
   const channelEmoji: Record<string, string> = { line: '💬 LINE', messenger: '📘 FB', whatsapp: '💚 WA' };
-  const statusBadge: Record<string, string> = { active: 'badge-success', live_agent: 'badge-live', closed: 'badge-muted' };
-  const statusLabel: Record<string, string> = { active: '進行中', live_agent: '真人接管', closed: '已結束' };
+
 
   return (
     <>
@@ -116,11 +116,33 @@ export default function ConversationsPage() {
                     </td>
                     <td>{channelEmoji[conv.channel_type] || conv.channel_type}</td>
                     <td>
-                      <span className={`badge ${statusBadge[conv.status] || 'badge-muted'}`}>
-                        <span className="badge-dot" />
-                        {statusLabel[conv.status] || conv.status}
-                      </span>
+                      {conv.status === 'live_agent' && conv.is_permanent ? (
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 5,
+                          background: 'rgba(217,119,6,0.15)', color: '#d97706',
+                          border: '1px solid rgba(217,119,6,0.3)',
+                          borderRadius: 20, padding: '3px 10px', fontSize: 11, fontWeight: 600,
+                        }}>
+                          🔒 永久接管
+                        </span>
+                      ) : conv.status === 'live_agent' ? (
+                        <span className="badge badge-live">
+                          <span className="badge-dot" />
+                          真人接管
+                        </span>
+                      ) : conv.status === 'active' ? (
+                        <span className="badge badge-success">
+                          <span className="badge-dot" />
+                          進行中
+                        </span>
+                      ) : (
+                        <span className="badge badge-muted">
+                          <span className="badge-dot" />
+                          {conv.status === 'closed' ? '已結束' : conv.status}
+                        </span>
+                      )}
                     </td>
+
                     <td className="text-sm">{new Date(conv.last_message_at).toLocaleString('zh-TW')}</td>
                     <td>
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
