@@ -379,5 +379,19 @@ export async function adminRoutes(app: FastifyInstance) {
       await db.from('product_url_allowlist').delete().eq('id', id).eq('tenant_id', tenantId);
       return { success: true };
     });
+
+    // POST-based delete (for compatibility with frontends that have CORS/caching issues with DELETE)
+    protectedApp.post('/products/allowlist/:id/delete', async (request: FastifyRequest, reply: FastifyReply) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const { id } = (request as any).params as { id: string };
+      const db = getSupabaseAdmin();
+      const { error } = await db
+        .from('product_url_allowlist')
+        .delete()
+        .eq('id', id)
+        .eq('tenant_id', tenantId);
+      if (error) return reply.status(400).send({ error: error.message });
+      return { success: true };
+    });
   });
 }

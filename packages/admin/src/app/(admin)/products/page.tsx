@@ -30,6 +30,10 @@ export default function ProductsPage() {
   const [newUrl, setNewUrl] = useState('');
   const [newNote, setNewNote] = useState('');
   const [adding, setAdding] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
   async function fetchProducts() {
     try {
@@ -82,20 +86,20 @@ export default function ProductsPage() {
   }
 
   async function removeFromAllowlist(id: string) {
-    if (!confirm('確定要從白名單中移除此 URL？')) return;
+    setDeleting(true);
     try {
-      // Use raw fetch to avoid Content-Type header being sent when there's no body
-      const token = getToken();
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/admin/products/allowlist/${id}`, {
-        method: 'DELETE',
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      // Use POST-based delete to avoid DELETE method CORS/caching issues
+      const res = await apiFetch<{ success: boolean }>(`/api/admin/products/allowlist/${id}/delete`, {
+        method: 'POST',
+        body: JSON.stringify({}),
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'Request failed' }));
-        throw new Error((err as any).error || 'Request failed');
-      }
       setAllowlist(prev => prev.filter(item => item.id !== id));
-    } catch (err: any) { alert('刪除失敗：' + err.message); }
+      setConfirmDeleteId(null);
+    } catch (err: any) {
+      alert('刪除失敗：' + err.message);
+    } finally {
+      setDeleting(false);
+    }
   }
 
   useEffect(() => { fetchProducts(); fetchAllowlist(); }, []);
@@ -175,8 +179,9 @@ export default function ProductsPage() {
               {allowlist.map(item => (
                 <div key={item.id} style={{
                   display: 'flex', alignItems: 'center', gap: 10,
-                  background: 'rgba(96,165,250,0.05)', border: '1px solid rgba(96,165,250,0.15)',
-                  borderRadius: 6, padding: '8px 12px'
+                  background: confirmDeleteId === item.id ? 'rgba(239,68,68,0.05)' : 'rgba(96,165,250,0.05)',
+                  border: `1px solid ${confirmDeleteId === item.id ? 'rgba(239,68,68,0.3)' : 'rgba(96,165,250,0.15)'}`,
+                  borderRadius: 6, padding: '8px 12px', transition: 'all 0.2s'
                 }}>
                   <ExternalLink size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
                   <a href={item.url} target="_blank" className="text-sm" style={{
@@ -184,13 +189,36 @@ export default function ProductsPage() {
                     textOverflow: 'ellipsis', whiteSpace: 'nowrap'
                   }}>{item.url}</a>
                   {item.note && <span className="text-xs text-muted">{item.note}</span>}
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    style={{ padding: '2px 6px', color: 'var(--status-error)' }}
-                    onClick={() => removeFromAllowlist(item.id)}
-                  >
-                    <Trash2 size={13} />
-                  </button>
+
+                  {confirmDeleteId === item.id ? (
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                      <span className="text-xs" style={{ color: 'var(--status-error)', whiteSpace: 'nowrap' }}>確定刪除？</span>
+                      <button
+                        className="btn btn-sm"
+                        style={{ padding: '2px 8px', background: 'rgba(239,68,68,0.8)', color: '#fff', fontSize: 12 }}
+                        onClick={() => removeFromAllowlist(item.id)}
+                        disabled={deleting}
+                      >
+                        {deleting ? '...' : '確定'}
+                      </button>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ padding: '2px 8px', fontSize: 12 }}
+                        onClick={() => setConfirmDeleteId(null)}
+                        disabled={deleting}
+                      >
+                        取消
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '2px 6px', color: 'var(--status-error)' }}
+                      onClick={() => setConfirmDeleteId(item.id)}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
