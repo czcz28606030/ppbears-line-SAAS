@@ -32,14 +32,17 @@ export default function ProductsPage() {
   const [adding, setAdding] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ count: number; time: string } | null>(null);
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
   async function fetchProducts() {
     try {
       const data = await apiFetch<{ products: Product[] }>('/api/admin/products');
-      setProducts(data.products || []);
-    } catch (err) { console.error(err); }
+      const newList = data.products || [];
+      setProducts(newList);
+      return newList.length;
+    } catch (err) { console.error(err); return 0; }
     finally { setLoading(false); }
   }
 
@@ -52,6 +55,7 @@ export default function ProductsPage() {
 
   async function triggerSync() {
     setSyncing(true);
+    setSyncResult(null);
     try {
       // Use raw fetch to avoid Content-Type header being sent when there's no body
       const token = getToken();
@@ -63,9 +67,16 @@ export default function ProductsPage() {
         const err = await res.json().catch(() => ({ error: 'Request failed' }));
         throw new Error((err as any).message || (err as any).error || 'Request failed');
       }
-      // Wait 8 seconds for async sync to finish, then refresh
-      setTimeout(() => { fetchProducts(); }, 8000);
-      setTimeout(() => { fetchProducts(); }, 20000); // second refresh for large categories
+      // Wait 8s then show result with current count
+      setTimeout(async () => {
+        const count = await fetchProducts();
+        setSyncResult({ count, time: new Date().toLocaleTimeString('zh-TW') });
+      }, 8000);
+      // Second refresh for large categories
+      setTimeout(async () => {
+        const count = await fetchProducts();
+        setSyncResult({ count, time: new Date().toLocaleTimeString('zh-TW') });
+      }, 25000);
     } catch (err: any) { alert('同步失敗：' + err.message); }
     finally { setSyncing(false); }
   }
@@ -121,6 +132,34 @@ export default function ProductsPage() {
       </div>
 
       <div className="page-content">
+        {/* Sync result banner */}
+        {syncResult && (
+          <div style={{
+            background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)',
+            borderRadius: 8, padding: '10px 16px', marginBottom: 16,
+            display: 'flex', alignItems: 'center', gap: 10
+          }}>
+            <span style={{ fontSize: 18 }}>✅</span>
+            <span style={{ fontWeight: 600, color: '#22c55e' }}>
+              同步完成！目前共索引 <strong>{syncResult.count}</strong> 個商品
+            </span>
+            <span className="text-xs text-muted" style={{ marginLeft: 'auto' }}>
+              {syncResult.time}
+            </span>
+          </div>
+        )}
+        {/* Syncing indicator */}
+        {syncing && (
+          <div style={{
+            background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.3)',
+            borderRadius: 8, padding: '10px 16px', marginBottom: 16,
+            display: 'flex', alignItems: 'center', gap: 10
+          }}>
+            <span style={{ fontSize: 18 }}>⏳</span>
+            <span style={{ color: 'var(--status-info)' }}>正在從 WooCommerce 同步商品，請稍候（約 10~30 秒）...</span>
+          </div>
+        )}
+
         <div className="section-header">
           <div>
             <div className="section-title">WooCommerce 產品索引</div>
