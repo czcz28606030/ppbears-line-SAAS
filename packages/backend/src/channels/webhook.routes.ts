@@ -33,12 +33,15 @@ export async function webhookRoutes(app: FastifyInstance) {
 
         const signature = request.headers['x-line-signature'] as string;
         const creds = channelConfig.credentials_encrypted as any;
-        if (signature && creds.channelSecret) {
-          const valid = lineChannel.verifyWithSecret(creds.channelSecret, signature, rawBody);
-          if (!valid) {
-            log.warn({ tenantId }, 'LINE signature verification failed');
-            return reply.status(403).send({ error: 'Invalid signature' });
-          }
+        // Mandatory signature verification — reject if either secret or signature is missing
+        if (!creds.channelSecret || !signature) {
+          log.warn({ tenantId }, 'LINE webhook rejected: missing channelSecret or signature header');
+          return reply.status(403).send({ error: 'Signature verification required' });
+        }
+        const valid = lineChannel.verifyWithSecret(creds.channelSecret, signature, rawBody);
+        if (!valid) {
+          log.warn({ tenantId }, 'LINE signature verification failed');
+          return reply.status(403).send({ error: 'Invalid signature' });
         }
 
         const messages = lineChannel.normalizeEvents(request.body);
