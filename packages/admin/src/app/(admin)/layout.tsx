@@ -46,16 +46,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      <div className="main-content">
-        {/* Mobile hamburger button — fixed top-left */}
-        <button
-          className="sidebar-hamburger"
-          onClick={() => setSidebarOpen(true)}
-          aria-label="開啟選單"
-        >
-          <Menu size={22} />
-        </button>
-
+      <div 
+        className="main-content"
+        onClickCapture={(e) => {
+          const target = e.target as HTMLElement;
+          // Only trigger sidebar open on mobile when clicking the topbar title
+          if (target.closest('.topbar-title') && window.innerWidth <= 768) {
+            setSidebarOpen(true);
+          }
+        }}
+      >
         {children}
       </div>
     </div>

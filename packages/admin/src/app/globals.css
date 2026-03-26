@@ -985,7 +985,18 @@ tr:hover td {
   }
 
   .topbar-title {
-    font-size: 15px;
+    font-size: 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+
+  .topbar-title::before {
+    content: '☰';
+    font-size: 18px;
+    opacity: 0.7;
+    margin-right: 2px;
   }
 
   /* Page content: tighter padding */
