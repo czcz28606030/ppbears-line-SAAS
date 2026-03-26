@@ -36,18 +36,26 @@ export default function ConversationsPage() {
   async function handleTakeover(convId: string) {
     setToggling(t => ({ ...t, [convId]: true }));
     try {
-      await apiFetch(`/api/admin/conversations/${convId}/takeover`, { method: 'POST', body: '{}' });
-      // Optimistic update
+      await apiFetch(`/api/admin/conversations/${convId}/takeover`, { method: 'POST', body: JSON.stringify({ permanent: false }) });
       setConversations(prev => prev.map(c => c.id === convId ? { ...c, status: 'live_agent' } : c));
     } catch (err: any) { alert('接管失敗：' + err.message); }
     finally { setToggling(t => ({ ...t, [convId]: false })); }
+  }
+
+  async function handlePermanentTakeover(convId: string) {
+    if (!confirm('確定要永久接管此對話？\nAI 將不再自動回覆，直到您手動點擊「還給AI」為止。')) return;
+    setToggling(t => ({ ...t, [convId + '_perm']: true }));
+    try {
+      await apiFetch(`/api/admin/conversations/${convId}/takeover`, { method: 'POST', body: JSON.stringify({ permanent: true }) });
+      setConversations(prev => prev.map(c => c.id === convId ? { ...c, status: 'live_agent' } : c));
+    } catch (err: any) { alert('永久接管失敗：' + err.message); }
+    finally { setToggling(t => ({ ...t, [convId + '_perm']: false })); }
   }
 
   async function handleRelease(convId: string) {
     setToggling(t => ({ ...t, [convId]: true }));
     try {
       await apiFetch(`/api/admin/conversations/${convId}/release`, { method: 'POST', body: '{}' });
-      // Optimistic update
       setConversations(prev => prev.map(c => c.id === convId ? { ...c, status: 'active' } : c));
     } catch (err: any) { alert('還原失敗：' + err.message); }
     finally { setToggling(t => ({ ...t, [convId]: false })); }
@@ -123,24 +131,49 @@ export default function ConversationsPage() {
 
                         {/* Takeover / Release toggle */}
                         {conv.status === 'active' && (
-                          <button
-                            className="btn btn-sm"
-                            disabled={toggling[conv.id]}
-                            onClick={() => handleTakeover(conv.id)}
-                            style={{
-                              background: 'linear-gradient(135deg, #1e3a5f, #2563eb)',
-                              color: '#fff', border: 'none', borderRadius: 8,
-                              padding: '5px 10px', cursor: 'pointer',
-                              display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12,
-                              opacity: toggling[conv.id] ? 0.6 : 1,
-                            }}
-                          >
-                            {toggling[conv.id]
-                              ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
-                              : <Headphones size={12} />}
-                            接管
-                          </button>
+                          <>
+                            {/* Temporary takeover (24h) */}
+                            <button
+                              className="btn btn-sm"
+                              disabled={toggling[conv.id]}
+                              onClick={() => handleTakeover(conv.id)}
+                              title="接管 24 小時，到期後自動恢復 AI"
+                              style={{
+                                background: 'linear-gradient(135deg, #1e3a5f, #2563eb)',
+                                color: '#fff', border: 'none', borderRadius: 8,
+                                padding: '5px 10px', cursor: 'pointer',
+                                display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12,
+                                opacity: toggling[conv.id] ? 0.6 : 1,
+                              }}
+                            >
+                              {toggling[conv.id]
+                                ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                                : <Headphones size={12} />}
+                              接管
+                            </button>
+
+                            {/* Permanent takeover (never expires) */}
+                            <button
+                              className="btn btn-sm"
+                              disabled={toggling[conv.id + '_perm']}
+                              onClick={() => handlePermanentTakeover(conv.id)}
+                              title="永久接管，AI 永遠不會自動恢復，須手動點「還給AI」"
+                              style={{
+                                background: 'linear-gradient(135deg, #4a2e00, #d97706)',
+                                color: '#fff', border: 'none', borderRadius: 8,
+                                padding: '5px 10px', cursor: 'pointer',
+                                display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12,
+                                opacity: toggling[conv.id + '_perm'] ? 0.6 : 1,
+                              }}
+                            >
+                              {toggling[conv.id + '_perm']
+                                ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                                : <span style={{ fontSize: 11 }}>🔒</span>}
+                              永久
+                            </button>
+                          </>
                         )}
+
 
                         {conv.status === 'live_agent' && (
                           <button

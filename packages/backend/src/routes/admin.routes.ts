@@ -117,6 +117,7 @@ export async function adminRoutes(app: FastifyInstance) {
       const tenantId = (request as any).jwtUser.tenantId;
       const adminEmail = (request as any).jwtUser.email;
       const { id: conversationId } = request.params;
+      const { permanent = false } = (request.body as any) || {};
       const db = getSupabaseAdmin();
 
       // Look up conversation to get user_id
@@ -124,8 +125,24 @@ export async function adminRoutes(app: FastifyInstance) {
       if (!conv) return reply.status(404).send({ error: 'Conversation not found' });
       if (conv.status === 'live_agent') return { success: true, message: 'Already in live agent mode' };
 
-      await liveAgentService.activate(tenantId, conv.user_id, conversationId, `Admin takeover by ${adminEmail}`);
-      return { success: true };
+      if (permanent) {
+        // Permanent mode: expires in year 2099 (won't be cleaned up by the auto-expire scheduler)
+        const permanentExpiry = new Date('2099-12-31T23:59:59Z').toISOString();
+        const { data, error } = await db.from('live_agent_sessions').insert({
+          tenant_id: tenantId,
+          user_id: conv.user_id,
+          conversation_id: conversationId,
+          reason: `Permanent admin takeover by ${adminEmail}`,
+          started_at: new Date().toISOString(),
+          expires_at: permanentExpiry,
+        }).select('id').single();
+        if (error) return reply.status(500).send({ error: error.message });
+        await db.from('conversations').update({ status: 'live_agent' }).eq('id', conversationId);
+        return { success: true, permanent: true, sessionId: data!.id };
+      } else {
+        await liveAgentService.activate(tenantId, conv.user_id, conversationId, `Admin takeover by ${adminEmail}`);
+        return { success: true, permanent: false };
+      }
     });
 
     // Admin: release live agent session (return to AI)
