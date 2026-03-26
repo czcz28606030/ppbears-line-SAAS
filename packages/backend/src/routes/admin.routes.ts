@@ -112,11 +112,50 @@ export async function adminRoutes(app: FastifyInstance) {
       return { conversation: conversation.data, messages: messages.data || [] };
     });
 
+    // Admin: activate live agent for a conversation (takeover by admin)
+    protectedApp.post<{ Params: { id: string } }>('/conversations/:id/takeover', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const adminEmail = (request as any).jwtUser.email;
+      const { id: conversationId } = request.params;
+      const db = getSupabaseAdmin();
+
+      // Look up conversation to get user_id
+      const { data: conv } = await db.from('conversations').select('user_id, status').eq('id', conversationId).eq('tenant_id', tenantId).single();
+      if (!conv) return reply.status(404).send({ error: 'Conversation not found' });
+      if (conv.status === 'live_agent') return { success: true, message: 'Already in live agent mode' };
+
+      await liveAgentService.activate(tenantId, conv.user_id, conversationId, `Admin takeover by ${adminEmail}`);
+      return { success: true };
+    });
+
+    // Admin: release live agent session (return to AI)
+    protectedApp.post<{ Params: { id: string } }>('/conversations/:id/release', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const adminEmail = (request as any).jwtUser.email;
+      const { id: conversationId } = request.params;
+      const db = getSupabaseAdmin();
+
+      // Find the active live agent session for this conversation
+      const { data: session } = await db
+        .from('live_agent_sessions')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .eq('conversation_id', conversationId)
+        .is('released_at', null)
+        .single();
+
+      if (!session) return reply.status(404).send({ error: 'No active live agent session found' });
+
+      await liveAgentService.release(session.id, `admin:${adminEmail}`);
+      return { success: true };
+    });
+
     // Live Agent Management
     protectedApp.get('/live-agent', async (request: FastifyRequest) => {
       const tenantId = (request as any).jwtUser.tenantId;
       return { sessions: await liveAgentService.getActiveSessions(tenantId) };
     });
+
 
     protectedApp.delete<{ Params: { id: string } }>('/live-agent/:id', async (request: FastifyRequest<{ Params: { id: string } }>) => {
       const { id } = request.params;

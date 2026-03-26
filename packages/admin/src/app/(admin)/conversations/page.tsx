@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../../../lib/api';
-import { MessageSquare, Search, Eye } from 'lucide-react';
+import { MessageSquare, Eye, Headphones, Bot, Loader2 } from 'lucide-react';
 
 interface Conversation {
   id: string;
@@ -18,6 +18,7 @@ export default function ConversationsPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+  const [toggling, setToggling] = useState<Record<string, boolean>>({});
 
   async function fetchConversations() {
     setLoading(true);
@@ -31,6 +32,26 @@ export default function ConversationsPage() {
   }
 
   useEffect(() => { fetchConversations(); }, [statusFilter]);
+
+  async function handleTakeover(convId: string) {
+    setToggling(t => ({ ...t, [convId]: true }));
+    try {
+      await apiFetch(`/api/admin/conversations/${convId}/takeover`, { method: 'POST', body: '{}' });
+      // Optimistic update
+      setConversations(prev => prev.map(c => c.id === convId ? { ...c, status: 'live_agent' } : c));
+    } catch (err: any) { alert('接管失敗：' + err.message); }
+    finally { setToggling(t => ({ ...t, [convId]: false })); }
+  }
+
+  async function handleRelease(convId: string) {
+    setToggling(t => ({ ...t, [convId]: true }));
+    try {
+      await apiFetch(`/api/admin/conversations/${convId}/release`, { method: 'POST', body: '{}' });
+      // Optimistic update
+      setConversations(prev => prev.map(c => c.id === convId ? { ...c, status: 'active' } : c));
+    } catch (err: any) { alert('還原失敗：' + err.message); }
+    finally { setToggling(t => ({ ...t, [convId]: false })); }
+  }
 
   const channelEmoji: Record<string, string> = { line: '💬 LINE', messenger: '📘 FB', whatsapp: '💚 WA' };
   const statusBadge: Record<string, string> = { active: 'badge-success', live_agent: 'badge-live', closed: 'badge-muted' };
@@ -94,9 +115,53 @@ export default function ConversationsPage() {
                     </td>
                     <td className="text-sm">{new Date(conv.last_message_at).toLocaleString('zh-TW')}</td>
                     <td>
-                      <a href={`/conversations/${conv.id}`} className="btn btn-ghost btn-sm">
-                        <Eye size={13} /> 查看
-                      </a>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        {/* View button */}
+                        <a href={`/conversations/${conv.id}`} className="btn btn-ghost btn-sm">
+                          <Eye size={13} /> 查看
+                        </a>
+
+                        {/* Takeover / Release toggle */}
+                        {conv.status === 'active' && (
+                          <button
+                            className="btn btn-sm"
+                            disabled={toggling[conv.id]}
+                            onClick={() => handleTakeover(conv.id)}
+                            style={{
+                              background: 'linear-gradient(135deg, #1e3a5f, #2563eb)',
+                              color: '#fff', border: 'none', borderRadius: 8,
+                              padding: '5px 10px', cursor: 'pointer',
+                              display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12,
+                              opacity: toggling[conv.id] ? 0.6 : 1,
+                            }}
+                          >
+                            {toggling[conv.id]
+                              ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                              : <Headphones size={12} />}
+                            接管
+                          </button>
+                        )}
+
+                        {conv.status === 'live_agent' && (
+                          <button
+                            className="btn btn-sm"
+                            disabled={toggling[conv.id]}
+                            onClick={() => handleRelease(conv.id)}
+                            style={{
+                              background: 'linear-gradient(135deg, #3a1f1f, #dc2626)',
+                              color: '#fff', border: 'none', borderRadius: 8,
+                              padding: '5px 10px', cursor: 'pointer',
+                              display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12,
+                              opacity: toggling[conv.id] ? 0.6 : 1,
+                            }}
+                          >
+                            {toggling[conv.id]
+                              ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                              : <Bot size={12} />}
+                            還給AI
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -105,6 +170,8 @@ export default function ConversationsPage() {
           )}
         </div>
       </div>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </>
   );
 }
+
