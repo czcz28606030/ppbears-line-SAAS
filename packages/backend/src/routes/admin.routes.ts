@@ -6,6 +6,7 @@ import { conversationService } from '../modules/conversation/conversation.servic
 import { liveAgentService } from '../modules/live-agent/live-agent.service.js';
 import { productService } from '../modules/products/product.service.js';
 import { knowledgeBaseService } from '../modules/knowledge/knowledge-base.service.js';
+import { llmRouter } from '../modules/llm/llm.router.js';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 
@@ -422,6 +423,79 @@ export async function adminRoutes(app: FastifyInstance) {
         .eq('tenant_id', tenantId);
       if (error) return reply.status(400).send({ error: error.message });
       return { success: true };
+    });
+
+    // ---- Chat Test (simulate full AI pipeline synchronously) ----
+    protectedApp.post('/chat/test', async (request: FastifyRequest, reply: FastifyReply) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const { message, history = [] } = request.body as {
+        message: string;
+        history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+      };
+
+      if (!message?.trim()) return reply.status(400).send({ error: 'message is required' });
+
+      const sources = { usedProducts: false, usedKnowledge: false, productCount: 0, kbCount: 0 };
+
+      // 1. Product search intent
+      let productAiContext = '';
+      if (productService.isProductQueryIntent(message)) {
+        const keyword = productService.extractSearchKeyword(message);
+        const products = await productService.searchProducts(tenantId, keyword, 5);
+        if (products.length > 0) {
+          productAiContext = productService.formatProductsAsAiContext(products);
+          sources.usedProducts = true;
+          sources.productCount = products.length;
+        }
+      }
+
+      // 2. Knowledge base RAG
+      const kbChunks = await knowledgeBaseService.retrieveContext(tenantId, message, 3);
+      let kbContext = '';
+      if (kbChunks.length > 0) {
+        kbContext = `\n\n以下是從知識庫擷取的相關參考資料：\n${kbChunks.map((c, i) => `[${i + 1}] ${c}`).join('\n')}`;
+        sources.usedKnowledge = true;
+        sources.kbCount = kbChunks.length;
+      }
+
+      // 3. System prompt
+      const db = getSupabaseAdmin();
+      const { data: promptData } = await db
+        .from('tenant_prompt_configs')
+        .select('content')
+        .eq('tenant_id', tenantId)
+        .eq('prompt_type', 'system')
+        .order('version', { ascending: false })
+        .limit(1)
+        .single();
+
+      const basePrompt = promptData?.content ||
+        `你是 PPBears 的 AI 客服助手。你只能回答與 PPBears 品牌、產品、訂單、客製化手機殼、售後服務相關的問題。回答請使用繁體中文，語氣友善專業。`;
+
+      const systemPrompt = basePrompt + productAiContext + kbContext;
+
+      // 4. Call LLM
+      const llmMessages = [
+        ...history,
+        { role: 'user' as const, content: message },
+      ];
+
+      const llmResponse = await llmRouter.call(tenantId, { messages: llmMessages, systemPrompt });
+
+      // 5. Append footer if configured (dedup)
+      const { data: footerSet } = await db
+        .from('tenant_settings')
+        .select('value')
+        .eq('tenant_id', tenantId)
+        .eq('key', 'bot_message_footer')
+        .single();
+
+      let reply_text = llmResponse.content;
+      if (footerSet?.value && !reply_text.includes(footerSet.value.trim())) {
+        reply_text += `\n\n${footerSet.value}`;
+      }
+
+      return { reply: reply_text, sources, model: llmResponse.model, provider: llmResponse.provider };
     });
   });
 }
