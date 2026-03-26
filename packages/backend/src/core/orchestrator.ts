@@ -144,8 +144,27 @@ export class Orchestrator {
         ? `\n\n以下是從知識庫擷取的相關參考資料：\n${kbChunks.map((c, i) => `[${i + 1}] ${c}`).join('\n')}`
         : '';
 
-      // Get tenant system prompt — inject product context FIRST so AI treats it as authoritative
-      const systemPrompt = await this.getSystemPrompt(tenantId) + productAiContext + kbContext;
+      // --- Load AI Strict Rules (highest priority — injected ABOVE system prompt) ---
+      const { data: strictRulesRaw } = await getSupabaseAdmin()
+        .from('tenant_settings')
+        .select('value')
+        .eq('tenant_id', tenantId)
+        .eq('key', 'ai_strict_rules')
+        .single();
+
+      let strictRulesBlock = '';
+      if (strictRulesRaw?.value) {
+        try {
+          const rules: string[] = JSON.parse(strictRulesRaw.value);
+          if (rules.length > 0) {
+            strictRulesBlock = `[ABSOLUTE RULES - NEVER VIOLATE UNDER ANY CIRCUMSTANCES]\n${rules.map((r, i) => `${i + 1}. ${r}`).join('\n')}\n[END ABSOLUTE RULES]\n\n`;
+          }
+        } catch {}
+      }
+
+      // Get tenant system prompt — strict rules at top, then base prompt, then product context, then KB
+      const systemPrompt = strictRulesBlock + await this.getSystemPrompt(tenantId) + productAiContext + kbContext;
+
 
       // Build LLM request
       const messages: ChatMessage[] = [

@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '../lib/auth-context';
 import {
   LayoutDashboard, Bot, BookOpen, MessageSquare, Headphones,
-  Package, Settings, PlugZap, Users, ClipboardList, LogOut, BarChart2, FlaskConical,
+  Package, Settings, PlugZap, Users, ClipboardList, LogOut, BarChart2, FlaskConical, ShieldAlert,
 } from 'lucide-react';
 
 const navItems = [
@@ -27,6 +27,7 @@ const navItems = [
     section: 'AI 設定',
     links: [
       { href: '/models', label: '模型設定', icon: Bot },
+      { href: '/models/rules', label: 'AI 優先規則', icon: ShieldAlert },
       { href: '/knowledge', label: '知識庫', icon: BookOpen },
       { href: '/products', label: '產品索引', icon: Package },
       { href: '/chat-test', label: '聊天測試', icon: FlaskConical },
