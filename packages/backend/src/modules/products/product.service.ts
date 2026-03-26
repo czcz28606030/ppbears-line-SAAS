@@ -127,6 +127,12 @@ export class ProductService {
         // ── Allowlist sync: supports product pages AND category pages ──────────
         log.info({ tenantId, count: allowlistUrls.length }, 'Starting allowlist-mode product sync');
 
+        // Clear old index first so only allowlist products remain
+        const { count: deleted } = await db
+          .from('product_index')
+          .delete()
+          .eq('tenant_id', tenantId);
+        log.info({ tenantId, deleted }, 'Cleared existing product index for allowlist sync');
         for (const url of allowlistUrls) {
           try {
             if (url.includes('/product-category/') || url.includes('/product_cat/')) {

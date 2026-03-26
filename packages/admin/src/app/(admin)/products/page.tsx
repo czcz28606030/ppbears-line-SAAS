@@ -77,7 +77,6 @@ export default function ProductsPage() {
     setSyncing(true);
     setSyncResult(null);
     try {
-      // Use raw fetch to avoid Content-Type header being sent when there's no body
       const token = getToken();
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/admin/products/sync`, {
         method: 'POST',
@@ -87,18 +86,39 @@ export default function ProductsPage() {
         const err = await res.json().catch(() => ({ error: 'Request failed' }));
         throw new Error((err as any).message || (err as any).error || 'Request failed');
       }
-      // Wait 8s then show result with current count
-      setTimeout(async () => {
-        const count = await fetchProducts();
-        setSyncResult({ count, time: new Date().toLocaleTimeString('zh-TW') });
-      }, 8000);
-      // Second refresh for large categories
-      setTimeout(async () => {
-        const count = await fetchProducts();
-        setSyncResult({ count, time: new Date().toLocaleTimeString('zh-TW') });
-      }, 25000);
-    } catch (err: any) { alert('同步失敗：' + err.message); }
-    finally { setSyncing(false); }
+
+      // Poll sync job status until completed or failed (max 90s)
+      const started = Date.now();
+      const poll = async () => {
+        try {
+          const data = await apiFetch<{ job: { status: string; items_processed: number; error_message?: string } | null }>(
+            '/api/admin/products/sync/last-result'
+          );
+          const job = data.job;
+          if (job && job.status === 'completed') {
+            await fetchProducts();
+            setSyncResult({ count: job.items_processed ?? 0, time: new Date().toLocaleTimeString('zh-TW') });
+            setSyncing(false);
+          } else if (job && job.status === 'failed') {
+            setSyncing(false);
+            alert('同步失敗：' + (job.error_message || '未知錯誤'));
+          } else if (Date.now() - started < 90000) {
+            setTimeout(poll, 3000);
+          } else {
+            // Timeout: show current DB count
+            const count = await fetchProducts();
+            setSyncResult({ count, time: new Date().toLocaleTimeString('zh-TW') });
+            setSyncing(false);
+          }
+        } catch {
+          setSyncing(false);
+        }
+      };
+      setTimeout(poll, 5000); // wait 5s before first poll
+    } catch (err: any) {
+      alert('同步失敗：' + err.message);
+      setSyncing(false);
+    }
   }
 
   async function addToAllowlist() {

@@ -325,6 +325,20 @@ export async function adminRoutes(app: FastifyInstance) {
       return { products: data || [] };
     });
 
+    protectedApp.get('/products/sync/last-result', async (request: FastifyRequest) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const db = getSupabaseAdmin();
+      const { data } = await db
+        .from('sync_jobs')
+        .select('status, items_processed, error_message, started_at, completed_at')
+        .eq('tenant_id', tenantId)
+        .eq('job_type', 'product_sync')
+        .order('started_at', { ascending: false })
+        .limit(1)
+        .single();
+      return { job: data || null };
+    });
+
     protectedApp.post('/products/sync', async (request: FastifyRequest, reply: FastifyReply) => {
       const tenantId = (request as any).jwtUser.tenantId;
       // Run async so webhook returns immediately
