@@ -283,6 +283,7 @@ export class ProductService {
     price: string;
     url: string;
     categories: string;
+    phone_models: string;
   }>> {
     const db = getSupabaseAdmin();
 

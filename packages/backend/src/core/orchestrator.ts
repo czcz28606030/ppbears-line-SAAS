@@ -186,13 +186,19 @@ export class Orchestrator {
           productAiContext = productService.formatProductsAsAiContext(products);
           log.info({ tenantId, searchKeyword, found: products.length }, 'Product search context injected into AI prompt');
 
-          // Extract any phone model from the search keyword and store as pending confirmation
-          const phoneModels = taggingService.extractPhoneModels(mergedContent);
-          if (phoneModels.length > 0) {
-            pendingPhoneTagForThisTurn = phoneModels[0]; // store best match
+          // Extract phone model from the BEST MATCHING PRODUCT's phone_models field.
+          // This is more reliable than parsing the customer's raw message text,
+          // because the product index already has normalized, standardized model names.
+          const bestProduct = products[0];
+          const tagFromProduct = taggingService.extractTagFromProduct(
+            bestProduct.phone_models || '',
+            bestProduct.name,
+          );
+          if (tagFromProduct) {
+            pendingPhoneTagForThisTurn = tagFromProduct;
             pendingPhoneTagMap.set(pendingKey, pendingPhoneTagForThisTurn);
-            // Append instruction to AI: ask customer to confirm the model
-            productAiContext += `\n\n⚠️ 系統提示（僅限 AI 參考，不要輸出這行）：偵測到手機型號「${pendingPhoneTagForThisTurn.replace('phone:', '')}」，請在回覆結尾加上一句：「請問是這款手機嗎？」讓客戶確認。`;
+            // Instruct AI to ask customer to confirm the model
+            productAiContext += `\n\n⚠️ 系統提示（僅限 AI 參考，不要輸出這行）：偵測到手機型號「${pendingPhoneTagForThisTurn.replace('phone:', '').replace(/-/g, ' ')}」，請在回覆結尾加上一句：「請問是這款手機嗎？」讓客戶確認。`;
           }
         }
       }

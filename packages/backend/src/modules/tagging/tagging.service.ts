@@ -122,6 +122,32 @@ export class TaggingService {
   }
 
   /**
+   * Extract a standardized tag slug from a product's phone_models field.
+   * This is the PREFERRED tagging method: it uses the product index data
+   * (which is already normalized in English) instead of parsing the customer's message.
+   *
+   * e.g. phone_models = "Xiaomi 17 Ultra, Xiaomi 17 Pro" → picks first → "phone:xiaomi-17-ultra"
+   * e.g. product name = "小米17 Ultra 客製化手機殼" → parse name → "phone:xiaomi-17-ultra"
+   */
+  extractTagFromProduct(phoneModels: string, productName: string): string | null {
+    // Strategy 1: Use phone_models field directly if it has content
+    if (phoneModels && phoneModels.trim()) {
+      // Take the first model in the comma-separated list
+      const firstModel = phoneModels.split(',')[0].trim();
+      if (firstModel.length >= 2) {
+        return normalizeModelTag(normalizeChineseBrand(firstModel));
+      }
+    }
+
+    // Strategy 2: Fall back to extracting from product name
+    // e.g. "Xiaomi 17 Ultra 客製化手機殼" → try regex match on the name
+    const fromName = this.extractPhoneModels(productName);
+    if (fromName.length > 0) return fromName[0];
+
+    return null;
+  }
+
+  /**
    * Upsert tags for a user. Ignores duplicates (ON CONFLICT DO NOTHING).
    */
   async saveTags(
