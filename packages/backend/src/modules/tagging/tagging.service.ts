@@ -20,6 +20,27 @@ function normalizeModelTag(raw: string): string {
  * Extraction rules: each entry defines a regex and how to build the display string.
  * We use named groups so we can reconstruct the canonical model name.
  */
+/**
+ * Normalize Chinese brand aliases to English before building the tag slug.
+ * e.g. "小米17U的殼" → extracting "小米17U" → internal → "phone:xiaomi-17-ultra"
+ */
+function normalizeChineseBrand(raw: string): string {
+  return raw
+    .replace(/小米|紅米/gi, 'xiaomi ')
+    .replace(/三星/gi, 'samsung ')
+    .replace(/蘋果/gi, 'iphone ')
+    .replace(/華為/gi, 'huawei ')
+    .replace(/華碩/gi, 'asus ')
+    .replace(/谷歌|pixel/gi, 'pixel ')
+    .replace(/索尼/gi, 'xperia ')
+    // Common abbreviation expansions
+    .replace(/\bU\b/gi, ' ultra')
+    .replace(/\bP\b/gi, ' pro')
+    .replace(/\bPM\b/gi, ' pro max')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 const MODEL_PATTERNS: Array<{ brand: string; regex: RegExp }> = [
   // Apple iPhone — e.g. iPhone 16 Pro Max, iphone16pro
   {
@@ -40,17 +61,17 @@ const MODEL_PATTERNS: Array<{ brand: string; regex: RegExp }> = [
   // Samsung Galaxy S / A / Z series — e.g. Galaxy S25 Ultra, S24 FE, S25ultra (bare)
   {
     brand: 'samsung',
-    regex: /(?:galaxy\s*)?([sz]\d{1,2}(?:\s*(?:ultra|plus|\+|fe|edge))?|a\d{2}(?:\s*(?:ultra|plus|\+|fe))?)/gi,
+    regex: /(?:galaxy\s*|三星\s*)?([sz]\d{1,2}(?:\s*(?:ultra|plus|\+|fe|edge))?|a\d{2}(?:\s*(?:ultra|plus|\+|fe))?)/gi,
   },
   // Google Pixel — e.g. Pixel 9 Pro
   {
     brand: 'pixel',
-    regex: /pixel\s*(\d{1,2})\s*(pro\s*xl|pro|xl|fold|a)?/gi,
+    regex: /(?:pixel|谷歌)\s*(\d{1,2})\s*(pro\s*xl|pro|xl|fold|a)?/gi,
   },
-  // Xiaomi / Redmi / POCO
+  // Xiaomi / Redmi / POCO — English AND Chinese (小米/紅米)
   {
     brand: 'xiaomi',
-    regex: /(?:xiaomi|redmi|poco)\s*(\w+\s*\w*)/gi,
+    regex: /(?:xiaomi|redmi|poco|小米|紅米)\s*(\w+[\s\w]*)/gi,
   },
   // OPPO / OnePlus / Realme
   {
@@ -59,13 +80,14 @@ const MODEL_PATTERNS: Array<{ brand: string; regex: RegExp }> = [
   },
   // Vivo
   { brand: 'vivo', regex: /vivo\s*(\w+)/gi },
-  // Huawei
-  { brand: 'huawei', regex: /huawei\s*(\w+)/gi },
+  // Huawei — English AND Chinese (華為)
+  { brand: 'huawei', regex: /(?:huawei|華為)\s*(\w+)/gi },
   // Sony Xperia
   { brand: 'sony', regex: /(?:sony\s*)?xperia\s*(\d+\s*(?:ii|iii|iv|v|vi)?)/gi },
   // ASUS ROG / Zenfone
-  { brand: 'asus', regex: /(?:asus\s*)?(?:rog\s*phone|zenfone)\s*(\d+)/gi },
+  { brand: 'asus', regex: /(?:asus\s*|華碩\s*)?(?:rog\s*phone|zenfone)\s*(\d+)/gi },
 ];
+
 
 export class TaggingService {
   /**
@@ -76,15 +98,22 @@ export class TaggingService {
   extractPhoneModels(text: string): string[] {
     const found = new Set<string>();
 
+    // Also try matching against a normalized version where Chinese brand names
+    // are replaced with their English counterparts (e.g. 小米 → xiaomi, 三星 → samsung)
+    const normalizedText = normalizeChineseBrand(text);
+    const textsToSearch = [text, normalizedText];
+
     for (const { brand, regex } of MODEL_PATTERNS) {
-      // Reset lastIndex for global regexes
-      regex.lastIndex = 0;
-      let match: RegExpExecArray | null;
-      while ((match = regex.exec(text)) !== null) {
-        // Reconstruct full model string from match
-        const full = match[0].trim();
-        if (full.length >= 2) {
-          found.add(normalizeModelTag(full));
+      for (const searchText of textsToSearch) {
+        // Reset lastIndex for global regexes
+        regex.lastIndex = 0;
+        let match: RegExpExecArray | null;
+        while ((match = regex.exec(searchText)) !== null) {
+          // Reconstruct full model string from match
+          const full = match[0].trim();
+          if (full.length >= 2) {
+            found.add(normalizeModelTag(full));
+          }
         }
       }
     }

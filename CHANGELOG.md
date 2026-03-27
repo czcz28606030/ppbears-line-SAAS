@@ -2,6 +2,14 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
+## [v0.4.0] - 2026-03-27
+### 🐛 根本修復：手機型號標籤偵測（中文支援）
+- **真正根源**：`extractPhoneModels()` 的正規表達式只比對英文品牌名（`xiaomi`, `samsung`），完全無法識別客戶常用的中文名稱（`小米`, `三星`, `蘋果`, `華為` 等）。這導致即使 AI 正確確認了手機型號，`pendingPhoneTagMap` 也從未被設定，客戶回「是」後永遠沒有標籤可以儲存。
+- **修復方式**：
+  - 新增 `normalizeChineseBrand()` 函數，將中文品牌名稱轉換為對應英文（`小米→xiaomi`、`三星→samsung`、`蘋果→iphone`、`華為→huawei` 等），並展開縮寫（`U→ultra`、`P→pro`、`PM→pro max`）。
+  - 在 `extractPhoneModels()` 中同時對原始文字與中文標準化後的版本進行比對，確保「小米17U的殼」可被正確偵測並標記為 `phone:xiaomi-17-ultra`。
+  - 在 `MODEL_PATTERNS` 中直接加入中文別名：`小米|紅米`、`三星`、`谷歌`、`華為`、`華碩`，兼顧中英兩種輸入方式。
+
 ## [v0.3.9] - 2026-03-27
 ### 🐛 修正
 - **受眾管理標籤顯示修復**：修正 `tagging.service.ts` 的 `listUsersByTag()` 函數。原本使用 Supabase PostgREST 的 `users!inner(...)` JOIN 語法，但由於 `user_tags` 表缺少對 `users` 的外鍵宣告，導致 JOIN 靜默失敗、永遠回傳 0 筆資料。現在改為兩步手動查詢（先撈標籤、再查用戶表），不依賴外鍵，受眾管理頁面可正確顯示已標記的客戶列表。
