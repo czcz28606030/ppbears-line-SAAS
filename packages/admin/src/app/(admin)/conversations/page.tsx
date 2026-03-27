@@ -21,18 +21,22 @@ export default function ConversationsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [toggling, setToggling] = useState<Record<string, boolean>>({});
 
-  async function fetchConversations() {
-    setLoading(true);
+  async function fetchConversations(silent = false) {
+    if (!silent) setLoading(true);
     try {
       const params = statusFilter ? `?status=${statusFilter}` : '';
       const data = await apiFetch<{ conversations: Conversation[]; total: number }>(`/api/admin/conversations${params}`);
       setConversations(data.conversations);
       setTotal(data.total);
     } catch (err) { console.error(err); }
-    finally { setLoading(false); }
+    finally { if (!silent) setLoading(false); }
   }
 
-  useEffect(() => { fetchConversations(); }, [statusFilter]);
+  useEffect(() => { 
+    fetchConversations();
+    const interval = setInterval(() => fetchConversations(true), 5000);
+    return () => clearInterval(interval);
+  }, [statusFilter]);
 
   async function handleTakeover(convId: string) {
     setToggling(t => ({ ...t, [convId]: true }));

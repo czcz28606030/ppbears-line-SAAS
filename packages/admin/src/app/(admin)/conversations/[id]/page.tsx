@@ -38,18 +38,24 @@ export default function ConversationDetailPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    async function fetchDetail() {
+    async function fetchDetail(silent = false) {
+      if (!silent) setLoading(true);
       try {
         const data = await apiFetch<ApiResponse>(`/api/admin/conversations/${conversationId}`);
         setConv(data.conversation);
         setMessages(data.messages || []);
       } catch (err: any) {
-        setError(err.message || '載入失敗');
+        if (!silent) setError(err.message || '載入失敗');
       } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
     }
-    if (conversationId) fetchDetail();
+    
+    if (conversationId) {
+      fetchDetail();
+      const interval = setInterval(() => fetchDetail(true), 5000);
+      return () => clearInterval(interval);
+    }
   }, [conversationId]);
 
   const statusBadge: Record<string, string> = { active: 'badge-success', live_agent: 'badge-live', closed: 'badge-muted' };
