@@ -121,14 +121,20 @@ export async function adminRoutes(app: FastifyInstance) {
 
       try {
         const url = `${baseUrl.replace(/\/$/, '')}/wp-json/wc/v3/orders?per_page=1&consumer_key=${consumerKey}&consumer_secret=${consumerSecret}`;
-        const res = await fetch(url);
+        const res = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
+          }
+        });
         const body = await res.text().catch(() => '');
         diagnosis.api_status = res.status;
         diagnosis.api_ok = res.ok;
         diagnosis.api_response_preview = body.substring(0, 200);
         return { ok: res.ok, diagnosis };
       } catch (err: any) {
-        return { ok: false, diagnosis, error: err.message };
+        log.error({ err: err.message, cause: err.cause, stack: err.stack }, 'WooCommerce connection test failed');
+        const detailedError = err.cause ? `${err.message} (Cause: ${err.cause.message || err.cause})` : err.message;
+        return { ok: false, diagnosis, error: detailedError };
       }
     });
 

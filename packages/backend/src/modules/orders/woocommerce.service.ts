@@ -106,7 +106,9 @@ export class WooCommerceService {
     try {
       // Approach 1: Try fetching directly by ID (which is the most common case for WC order numbers)
       const directUrl = `${creds.baseUrl}/wp-json/wc/v3/orders/${encodeURIComponent(orderNumber)}?${this.buildAuthQuery(creds.consumerKey, creds.consumerSecret)}`;
-      const directRes = await fetch(directUrl);
+      const directRes = await fetch(directUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36' }
+      });
       
       if (directRes.ok) {
         const order = await directRes.json() as WooOrder;
@@ -117,7 +119,9 @@ export class WooCommerceService {
       // Approach 2: If direct ID fetch fails, fallback to search (for custom order numbers)
       log.info({ tenantId, orderNumber, status: directRes.status }, 'Direct ID fetch failed, trying search fallback');
       const searchUrl = `${creds.baseUrl}/wp-json/wc/v3/orders?search=${encodeURIComponent(orderNumber)}&per_page=10&${this.buildAuthQuery(creds.consumerKey, creds.consumerSecret)}`;
-      const searchRes = await fetch(searchUrl);
+      const searchRes = await fetch(searchUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36' }
+      });
       
       if (!searchRes.ok) {
         throw new Error(`WC API search error: ${searchRes.status}`);
@@ -150,7 +154,9 @@ export class WooCommerceService {
 
     try {
       const url = `${creds.baseUrl}/wp-json/wc/v3/orders?search=${encodeURIComponent(contact)}&per_page=5&${this.buildAuthQuery(creds.consumerKey, creds.consumerSecret)}`;
-      const res = await fetch(url);
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36' }
+      });
       if (!res.ok) return [];
       return await res.json() as WooOrder[];
     } catch (err: any) {

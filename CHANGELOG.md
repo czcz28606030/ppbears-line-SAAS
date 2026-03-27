@@ -2,6 +2,10 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
+## [v0.2.6] - 2026-03-27
+### 🐛 Hotfix
+- **WooCommerce API 連線修正**：為所有對 WooCommerce 的 API 請求（包含連線測試、訂單查詢、快速開單與商品同步）加入標準 `User-Agent` 標頭，解決雲端部署後因 Node.js 預設 User-Agent 被防火牆（WAF）阻擋導致的 `fetch failed` 錯誤。
+
 ## [v0.2.5] - 2026-03-27
 
 ### ⚡ 快速開單系統 (Quick Order via LINE)

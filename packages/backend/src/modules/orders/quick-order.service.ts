@@ -106,7 +106,9 @@ export class QuickOrderService {
     let templateFields: Record<string, any> = {};
     if (templateProductId) {
       try {
-        const tRes = await fetch(`${base}/wp-json/wc/v3/products/${templateProductId}?${auth}`);
+        const tRes = await fetch(`${base}/wp-json/wc/v3/products/${templateProductId}?${auth}`, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36' }
+        });
         if (tRes.ok) {
           const t = await tRes.json() as Record<string, any>;
           templateFields = {
@@ -140,7 +142,10 @@ export class QuickOrderService {
     try {
       const res = await fetch(`${base}/wp-json/wc/v3/products?${auth}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'
+        },
         body: JSON.stringify(productPayload),
       });
 
