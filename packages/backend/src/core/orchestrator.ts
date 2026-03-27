@@ -125,7 +125,7 @@ export class Orchestrator {
             await adapter.sendReply(tenantId, replyCtx.platformUserId, [{ type: 'text', content: quickReply }]);
           }
         }
-        await conversationService.saveMessage(tenantId, conversationId, 'assistant', quickReply);
+        // Do not save system intercepts as 'assistant' to prevent AI hallucination
         return;
       }
 
@@ -140,7 +140,7 @@ export class Orchestrator {
             await adapter.sendReply(tenantId, replyCtx.platformUserId, [{ type: 'text', content: orderReply }]);
           }
         }
-        await conversationService.saveMessage(tenantId, conversationId, 'assistant', orderReply);
+        // Do not save system intercepts as 'assistant' to prevent AI hallucination
         return;
       }
 
