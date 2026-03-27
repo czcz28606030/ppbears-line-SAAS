@@ -178,6 +178,7 @@ export class TaggingService {
 
   /**
    * List users filtered by tag, with pagination.
+   * Uses a two-step query to avoid dependency on a Supabase foreign key.
    */
   async listUsersByTag(
     tenantId: string,
@@ -187,31 +188,43 @@ export class TaggingService {
   ): Promise<{ users: any[]; total: number }> {
     const db = getSupabaseAdmin();
 
+    // Step 1: Fetch user_tags rows (no join)
     let query = db
       .from('user_tags')
-      .select('user_id, tag, source, created_at, users!inner(id, display_name, unified_user_id)', {
-        count: 'exact',
-      })
+      .select('user_id, tag, source, created_at', { count: 'exact' })
       .eq('tenant_id', tenantId);
 
     if (tag) {
       query = query.eq('tag', tag);
     }
 
-    const { data, count } = await query
+    const { data: tagRows, count } = await query
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
-    // Group by user_id and collect all their tags
+    if (!tagRows || tagRows.length === 0) {
+      return { users: [], total: count || 0 };
+    }
+
+    // Step 2: Fetch user details for all unique user_ids
+    const userIds = [...new Set(tagRows.map((r) => r.user_id))];
+    const { data: usersData } = await db
+      .from('users')
+      .select('id, display_name, unified_user_id')
+      .in('id', userIds);
+
+    const usersById = new Map((usersData || []).map((u) => [u.id, u]));
+
+    // Step 3: Merge in application layer
     const userMap = new Map<string, any>();
-    for (const row of data || []) {
+    for (const row of tagRows) {
       const uid = row.user_id;
       if (!userMap.has(uid)) {
-        const u = (row as any).users;
+        const u = usersById.get(uid);
         userMap.set(uid, {
           id: uid,
-          display_name: u?.display_name || uid,
-          unified_user_id: u?.unified_user_id,
+          display_name: u?.display_name || u?.unified_user_id || uid,
+          unified_user_id: u?.unified_user_id || uid,
           tags: [],
         });
       }
