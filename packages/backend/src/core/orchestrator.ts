@@ -67,13 +67,49 @@ export class Orchestrator {
     if (liveAgentService.isTriggerPhrase(content)) {
       const convId = await conversationService.getOrCreateConversation(tenantId, userId, channelType);
       await conversationService.saveMessage(tenantId, convId, 'user', content);
-      await liveAgentService.activate(tenantId, userId, convId, `Trigger: "${content}"`);
+
+      // Load live agent settings from tenant_settings
+      const db = getSupabaseAdmin();
+      const { data: settingsRows } = await db
+        .from('tenant_settings')
+        .select('key, value')
+        .eq('tenant_id', tenantId)
+        .in('key', ['live_agent_hours_start', 'live_agent_hours_end', 'live_agent_takeover_message', 'live_agent_off_hours_message']);
+
+      const s: Record<string, string> = {};
+      for (const r of settingsRows || []) if (r.key && r.value) s[r.key] = r.value;
+
+      const hoursStart = s['live_agent_hours_start'] || '';
+      const hoursEnd   = s['live_agent_hours_end'] || '';
+      const takeoverMsg = s['live_agent_takeover_message'] || '已為您轉接真人客服，請稍候。我們的客服人員會盡快回覆您！';
+      const offHoursMsg = s['live_agent_off_hours_message'] || '真人客服目前休息中，如有問題請先說明，客服看到後會盡快回覆您！';
+
+      // Determine if we are within service hours (Taiwan time, Asia/Taipei)
+      let withinHours = true;
+      if (hoursStart && hoursEnd) {
+        const now = new Date();
+        // Get current HH:MM in Asia/Taipei
+        const tpTime = now.toLocaleTimeString('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hour12: false });
+        withinHours = tpTime >= hoursStart && tpTime <= hoursEnd;
+      }
 
       const adapter = channelRegistry.get(channelType);
-      if (adapter) {
-        await adapter.sendReply(tenantId, platformUserId, [
-          { type: 'text', content: '已為您轉接真人客服，請稍候。我們的客服人員會盡快回覆您！' }
-        ]);
+      if (withinHours) {
+        // Within service hours: activate live agent and send takeover message
+        await liveAgentService.activate(tenantId, userId, convId, `Trigger: "${content}"`);
+        if (adapter) {
+          await adapter.sendReply(tenantId, platformUserId, [
+            { type: 'text', content: takeoverMsg },
+          ]);
+        }
+      } else {
+        // Outside service hours: send off-hours message, do NOT activate
+        log.info({ tenantId, userId, hoursStart, hoursEnd }, 'Live agent trigger blocked — outside service hours');
+        if (adapter) {
+          await adapter.sendReply(tenantId, platformUserId, [
+            { type: 'text', content: offHoursMsg },
+          ]);
+        }
       }
       return;
     }

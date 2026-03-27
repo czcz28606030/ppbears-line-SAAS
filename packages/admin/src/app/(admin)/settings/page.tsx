@@ -10,6 +10,10 @@ export default function SettingsPage() {
     woo_consumer_key: '',
     woo_consumer_secret: '',
     live_agent_duration_hours: '24',
+    live_agent_hours_start: '',
+    live_agent_hours_end: '',
+    live_agent_takeover_message: '已為您轉接真人客服，請稍候。我們的客服人員會盡快回覆您！',
+    live_agent_off_hours_message: '真人客服目前休息中，如有問題請先說明，客服看到後會盡快回覆您！',
     message_gate_window_ms: '8000',
     bot_message_footer: '',
     admin_unlock_whitelist: '',
@@ -141,6 +145,85 @@ export default function SettingsPage() {
     },
   ];
 
+  // ── Live Agent Hours card (custom layout, not in sections array) ──
+  const liveAgentHoursCard = (
+    <div className="card" style={{ marginBottom: 'var(--space-md)' }}>
+      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 'var(--space-md)' }}>🕐 真人客服時段設定</div>
+
+      {/* Time range row */}
+      <div className="form-group">
+        <label className="form-label">服務時段（空白表示不限時間，全天可轉接）</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <input
+            type="time"
+            className="form-input"
+            style={{ width: 140 }}
+            value={settings['live_agent_hours_start'] || ''}
+            onChange={e => setSettings({ ...settings, live_agent_hours_start: e.target.value })}
+          />
+          <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>到</span>
+          <input
+            type="time"
+            className="form-input"
+            style={{ width: 140 }}
+            value={settings['live_agent_hours_end'] || ''}
+            onChange={e => setSettings({ ...settings, live_agent_hours_end: e.target.value })}
+          />
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={async () => {
+              setSaving(true);
+              try {
+                await apiFetch('/api/admin/settings', { method: 'PUT', body: JSON.stringify({ key: 'live_agent_hours_start', value: settings['live_agent_hours_start'] || '' }) });
+                await apiFetch('/api/admin/settings', { method: 'PUT', body: JSON.stringify({ key: 'live_agent_hours_end', value: settings['live_agent_hours_end'] || '' }) });
+                setSaved(true); setTimeout(() => setSaved(false), 2000);
+              } catch (err: any) { alert(err.message); }
+              finally { setSaving(false); }
+            }}
+            disabled={saving}
+          >
+            <Save size={13} /> 儲存時段
+          </button>
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+          例：設定 10:00 到 21:00，則只有這段時間客戶輸入「真人」才能轉接。
+        </div>
+      </div>
+
+      {/* Takeover success message */}
+      <div className="form-group">
+        <label className="form-label">✅ 接通成功訊息（轉接真人客服成功時，回給客戶的文字）</label>
+        <textarea
+          className="form-textarea"
+          placeholder="已為您轉接真人客服，請稍候。我們的客服人員會盡快回覆您！"
+          value={settings['live_agent_takeover_message'] || ''}
+          onChange={e => setSettings({ ...settings, live_agent_takeover_message: e.target.value })}
+        />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => handleSave('live_agent_takeover_message')} disabled={saving}>
+            <Save size={13} /> 儲存
+          </button>
+        </div>
+      </div>
+
+      {/* Off-hours message */}
+      <div className="form-group">
+        <label className="form-label">🌙 非服務時間訊息（超出時段客戶輸入「真人」時，回給客戶的文字，不會轉接）</label>
+        <textarea
+          className="form-textarea"
+          placeholder="真人客服目前休息中，如有問題請先說明，客服看到後會盡快回覆您！"
+          value={settings['live_agent_off_hours_message'] || ''}
+          onChange={e => setSettings({ ...settings, live_agent_off_hours_message: e.target.value })}
+        />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
+          <button className="btn btn-ghost btn-sm" onClick={() => handleSave('live_agent_off_hours_message')} disabled={saving}>
+            <Save size={13} /> 儲存
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <>
       <div className="topbar">
@@ -159,6 +242,7 @@ export default function SettingsPage() {
         </div>
 
         <div className="flex-col">
+          {liveAgentHoursCard}
           {sections.map((section) => (
             <div key={section.title} className="card">
               <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 'var(--space-md)' }}>{section.title}</div>
