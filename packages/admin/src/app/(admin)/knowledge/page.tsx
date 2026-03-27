@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../../../lib/api';
-import { BookOpen, Upload, Trash2, FileText, RefreshCw, Edit2 } from 'lucide-react';
+import { BookOpen, Upload, Trash2, FileText, RefreshCw, Edit2, Type } from 'lucide-react';
 
 interface KnowledgeDoc {
   id: string;
@@ -78,6 +78,30 @@ export default function KnowledgePage() {
       alert('儲存失敗: ' + (err.message || 'Error'));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete(doc: KnowledgeDoc) {
+    if (!window.confirm(`確定要刪除文件「${doc.filename}」嗎？這個操作無法復原。`)) return;
+    try {
+      await apiFetch(`/api/admin/knowledge/${doc.id}`, { method: 'DELETE' });
+      fetchDocs();
+    } catch (err: any) {
+      alert('刪除失敗: ' + (err.message || 'Error'));
+    }
+  }
+
+  async function handleRename(doc: KnowledgeDoc) {
+    const newName = window.prompt('請輸入新的文件名稱：', doc.filename);
+    if (!newName || newName.trim() === '' || newName === doc.filename) return;
+    try {
+      await apiFetch(`/api/admin/knowledge/${doc.id}/rename`, {
+        method: 'PATCH',
+        body: JSON.stringify({ filename: newName.trim() }),
+      });
+      fetchDocs();
+    } catch (err: any) {
+      alert('更新名稱失敗: ' + (err.message || 'Error'));
     }
   }
 
@@ -161,10 +185,13 @@ export default function KnowledgePage() {
                     <td><span className={`badge ${statusBadge[doc.status] || 'badge-muted'}`}><span className="badge-dot" />{statusLabel[doc.status] || doc.status}</span></td>
                     <td className="text-sm">{new Date(doc.uploaded_at).toLocaleString('zh-TW')}</td>
                     <td>
+                      <button className="btn btn-ghost btn-sm" onClick={() => handleRename(doc)} title="修改名稱">
+                        <Type size={13} />
+                      </button>
                       <button className="btn btn-ghost btn-sm" onClick={() => handleEditClick(doc)} title="編輯內容">
                         <Edit2 size={13} />
                       </button>
-                      <button className="btn btn-danger btn-sm" title="刪除">
+                      <button className="btn btn-danger btn-sm" onClick={() => handleDelete(doc)} title="刪除">
                         <Trash2 size={13} />
                       </button>
                     </td>

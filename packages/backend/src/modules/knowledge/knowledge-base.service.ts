@@ -171,6 +171,17 @@ export class KnowledgeBaseService {
       .eq('id', documentId)
       .eq('tenant_id', tenantId);
   }
+
+  /**
+   * Rename a document.
+   */
+  async renameDocument(tenantId: string, documentId: string, newFilename: string): Promise<void> {
+    const db = getSupabaseAdmin();
+    await db.from('knowledge_documents')
+      .update({ filename: newFilename })
+      .eq('id', documentId)
+      .eq('tenant_id', tenantId);
+  }
 }
 
 export const knowledgeBaseService = new KnowledgeBaseService();

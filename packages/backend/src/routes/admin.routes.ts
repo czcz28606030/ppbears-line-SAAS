@@ -480,6 +480,17 @@ export async function adminRoutes(app: FastifyInstance) {
       return { success: true };
     });
 
+    protectedApp.patch<{ Params: { id: string }; Body: { filename: string } }>('/knowledge/:id/rename', async (request) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const { id } = request.params;
+      const { filename } = request.body;
+      if (!filename || filename.trim() === '') {
+        throw new Error('Filename cannot be empty');
+      }
+      await knowledgeBaseService.renameDocument(tenantId, id, filename.trim());
+      return { success: true };
+    });
+
     protectedApp.get<{ Params: { id: string } }>('/knowledge/:id/content', async (request) => {
       const tenantId = (request as any).jwtUser.tenantId;
       const { id } = request.params;
