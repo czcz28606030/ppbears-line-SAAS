@@ -2,6 +2,19 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
+## [v0.3.2] - 2026-03-27
+### 🐛 Hotfix
+- **確保全線 www 請求一致性**：修正 `createWooProduct` 內部多餘的正則表達式，確保新建立的客製化商品連結 (permalink) 維持完整的 `https://www.ppbears.com`，避免被截斷為非 www 版本。
+
+## [v0.3.1] - 2026-03-27
+### 🔄 部署優化
+- **快速開單建置修復**：修正快速開單 (`QuickOrder`) 生成商品連結的去字頭邏輯，並確保新版設定生效。
+
+## [v0.3.0] - 2026-03-27
+### 🚀 功能與修正
+- **Hostinger 防火牆穿透（最終修正）**：針對 Hostinger `Imunify360` 對於 Render 雲端環境連線 non-www HTTPS (`https://ppbears.com`, Port 443) 會發生 `ETIMEDOUT` 封鎖的問題。現在系統後端的 WooCommerce 服務（包含 `woocommerce.service.ts`, `quick-order.service.ts`, `product.service.ts`）會自動將 API 呼叫的 `baseUrl` 正規化加入 `www.`（如 `https://www.ppbears.com`），徹底繞過 WAF 的阻擋，使「連線測試」、「快速開單」、「商品同步」等功能在生產環境重新正常運作。
+- **連線診斷工具升級**：為 Admin Panel 的「測試 WooCommerce 連線」增加 DNS 解析、Render 對外連線 IP、以及三種網路協定變體（non-www HTTPS, www HTTPS, non-www HTTP）的多重連線探測回報，大幅增加雲端除錯能力。
+
 ## [v0.2.7] - 2026-03-27
 ### 🐛 Hotfix
 - **WooCommerce 連線根本修正**：新增 `woo-request.ts` 工具函式，改用 Node.js 原生 `node:https` 模組（替代 Node 18 內建 `undici`/`fetch`）進行所有 WooCommerce API 請求。根本原因：Render 雲端環境中 `undici` 使用的 Happy Eyeballs 演算法被 Hostinger/Imunify360 防火牆在 TCP 層級阻擋，導致 `AggregateError`，而原生 `https` 模組使用不同的連線機制可成功穿透。
