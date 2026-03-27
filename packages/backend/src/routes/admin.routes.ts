@@ -139,12 +139,40 @@ export async function adminRoutes(app: FastifyInstance) {
           return { ok: false, diagnosis, error: `DNS resolution failed for ${hostname}: ${dnsResult.detail}` };
         }
 
-        // Step 2: WooCommerce API
-        const url = `${baseUrl.replace(/\/$/, '')}/wp-json/wc/v3/orders?per_page=1&consumer_key=${consumerKey}&consumer_secret=${consumerSecret}`;
+        // Step 2: Multi-variant connectivity probe
+        const rawHost = new URL(baseUrl).hostname.replace(/^www\./, '');
+        const probeUrls: Record<string, string> = {
+          'https_no_www': `https://${rawHost}/wp-json/`,
+          'https_www':    `https://www.${rawHost}/wp-json/`,
+          'http_no_www':  `http://${rawHost}/wp-json/`,
+        };
+
+        const probeResults: Record<string, string> = {};
+        let workingBase: string | null = null;
+        for (const [label, probeUrl] of Object.entries(probeUrls)) {
+          try {
+            const pr = await wooRequest(probeUrl, { timeoutMs: 8000 });
+            probeResults[label] = `✅ HTTP ${pr.status}`;
+            if (pr.ok && !workingBase) {
+              workingBase = probeUrl.replace('/wp-json/', '');
+            }
+          } catch (pe: any) {
+            probeResults[label] = `❌ ${pe.message || pe.code || 'error'}`;
+          }
+        }
+        diagnosis.connectivity_probe = probeResults;
+
+        if (!workingBase) {
+          return { ok: false, diagnosis, error: `連線測試：HTTPS 非 www、HTTPS www、HTTP 三種路由皆無法到達 ${rawHost}。請確認 Hostinger 防火牆設定。` };
+        }
+
+        // Step 3: WooCommerce API using working base
+        const url = `${workingBase}/wp-json/wc/v3/orders?per_page=1&consumer_key=${consumerKey}&consumer_secret=${consumerSecret}`;
         const res = await wooRequest(url);
         const body = await res.text();
         diagnosis.api_status = res.status;
         diagnosis.api_ok = res.ok;
+        diagnosis.api_working_base = workingBase;
         diagnosis.api_response_preview = body.substring(0, 300);
         return { ok: res.ok, diagnosis };
       } catch (err: any) {
