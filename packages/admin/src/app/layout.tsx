@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { AuthProvider } from '../lib/auth-context';
 // v0.4.3 – live agent hours, immediate tagging, Chinese brand support
+// Manual rebuild trigger after Git reconnect
 
 export const metadata: Metadata = {
   title: 'PPBears CS Admin',
