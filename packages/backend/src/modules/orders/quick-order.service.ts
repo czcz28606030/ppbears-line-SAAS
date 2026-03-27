@@ -102,7 +102,7 @@ export class QuickOrderService {
     amount: string,
   ): Promise<{ productId: number; permalink: string } | null> {
     const { wooBaseUrl, consumerKey, consumerSecret, templateProductId } = settings;
-    const base = wooBaseUrl.replace(/\/$/, '').replace(/^(https?:\/\/)www\./, '$1');
+    const base = wooBaseUrl.replace(/\/$/, '');
     const auth = `consumer_key=${consumerKey}&consumer_secret=${consumerSecret}`;
 
     // Step 1: Fetch template product settings to copy (optional but recommended)
