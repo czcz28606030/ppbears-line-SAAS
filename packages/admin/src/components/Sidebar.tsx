@@ -7,7 +7,7 @@ import { useAuth } from '../lib/auth-context';
 import {
   LayoutDashboard, Bot, BookOpen, MessageSquare, Headphones,
   Package, Settings, PlugZap, Users, ClipboardList, LogOut,
-  BarChart2, FlaskConical, ShieldAlert, X,
+  BarChart2, FlaskConical, ShieldAlert, X, Tags, Megaphone,
 } from 'lucide-react';
 
 const navItems = [
@@ -32,6 +32,13 @@ const navItems = [
       { href: '/knowledge', label: '知識庫', icon: BookOpen },
       { href: '/products', label: '產品索引', icon: Package },
       { href: '/chat-test', label: '聊天測試', icon: FlaskConical },
+    ],
+  },
+  {
+    section: '行銷',
+    links: [
+      { href: '/audiences', label: '受眾管理', icon: Tags },
+      { href: '/broadcast', label: '行銷推播', icon: Megaphone },
     ],
   },
   {

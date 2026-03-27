@@ -13,6 +13,8 @@ import { handleOrderQuery, isOrderQueryIntent } from '../modules/orders/order-qu
 import { productService } from '../modules/products/product.service.js';
 import { knowledgeBaseService } from '../modules/knowledge/knowledge-base.service.js';
 import { usageTrackingService } from '../modules/tenant/usage-tracking.service.js';
+import { taggingService } from '../modules/tagging/tagging.service.js';
+import { quickOrderService } from '../modules/orders/quick-order.service.js';
 
 const log = createLogger({ module: 'Orchestrator' });
 
@@ -112,6 +114,21 @@ export class Orchestrator {
       // Get conversation history
       const history = await conversationService.getRecentHistory(tenantId, conversationId, 10);
 
+      // --- Phase 0: Quick order command intercept (admin keyword → create WC order) ---
+      const quickReply = await quickOrderService.handleIfCommand(tenantId, mergedContent);
+      if (quickReply !== null) {
+        const adapter = channelRegistry.get(replyCtx.channelType);
+        if (adapter) {
+          if (replyCtx.replyToken && adapter.sendReplyWithToken) {
+            await adapter.sendReplyWithToken(tenantId, replyCtx.replyToken, [{ type: 'text', content: quickReply }]);
+          } else {
+            await adapter.sendReply(tenantId, replyCtx.platformUserId, [{ type: 'text', content: quickReply }]);
+          }
+        }
+        await conversationService.saveMessage(tenantId, conversationId, 'assistant', quickReply);
+        return;
+      }
+
       // --- Phase 2: Order query intercept (multi-turn stateful flow) ---
       const orderReply = await handleOrderQuery(tenantId, userId, mergedContent);
       if (orderReply !== null) {
@@ -135,6 +152,14 @@ export class Orchestrator {
         if (products.length > 0) {
           productAiContext = productService.formatProductsAsAiContext(products);
           log.info({ tenantId, searchKeyword, found: products.length }, 'Product search context injected into AI prompt');
+        }
+
+        // --- Auto-tag phone models mentioned in the message (fire-and-forget) ---
+        const phoneModels = taggingService.extractPhoneModels(mergedContent);
+        if (phoneModels.length > 0) {
+          taggingService.saveTags(tenantId, userId, phoneModels, 'ai_detected').catch((err: any) =>
+            log.error({ err: err.message }, 'Failed to save phone model tags'),
+          );
         }
       }
 

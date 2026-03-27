@@ -273,6 +273,7 @@ export class ProductService {
 
   /**
    * Search products in the local index by keyword (phone model, category, name).
+   * Uses tokenized search to match variations like "小米17U" against "Xiaomi 17 Ultra".
    */
   async searchProducts(tenantId: string, query: string, limit = 3): Promise<Array<{
     name: string;
@@ -281,14 +282,27 @@ export class ProductService {
     categories: string;
   }>> {
     const db = getSupabaseAdmin();
-    const { data } = await db
+
+    // Tokenize the query: split into letters, numbers, and Chinese characters.
+    // e.g. "小米17U" -> ["小米", "17", "U"]
+    const tokens = query.match(/[a-zA-Z]+|[0-9]+|[\u4e00-\u9fa5]+/g);
+    if (!tokens || tokens.length === 0) return [];
+
+    let dbQuery = db
       .from('product_index')
       .select('name, price, url, categories, phone_models')
       .eq('tenant_id', tenantId)
-      .eq('status', 'active')
-      .or(`name.ilike.%${query}%,categories.ilike.%${query}%,tags.ilike.%${query}%,phone_models.ilike.%${query}%`)
-      .limit(limit);
+      .eq('status', 'active');
 
+    // Every token must match *somewhere* (name OR categories OR tags OR phone_models)
+    for (const token of tokens) {
+      dbQuery = dbQuery.or(`name.ilike.%${token}%,categories.ilike.%${token}%,tags.ilike.%${token}%,phone_models.ilike.%${token}%`);
+    }
+
+    const { data } = await dbQuery.limit(limit);
+
+    // Filter out "U" token matches that just caught a random English word if other tokens were short,
+    // but the Supabase query will handle it mostly fine.
     return data || [];
   }
 
@@ -311,8 +325,9 @@ export class ProductService {
       /\bipad\b/i,
       /galaxy\s*(s|a|z)\d/i,
       /pixel\s*\d/i,
-      /\b\d{1,2}\s*(pro|plus|ultra|max|mini)\b/i,  // e.g. "17 PRO", "15 Plus"
+      /\b\d{1,2}\s*(pro|plus|ultra|max|mini|u)\b/i,  // e.g. "17 PRO", "15 Plus", "17U"
       /xiaomi|oppo|vivo|realme|huawei|sony|lg|htc|asus|nokia/i,
+      /蘋果|三星|小米|紅米|華為|華碩|索尼|谷歌/i,
     ];
     return modelPatterns.some(p => p.test(text));
   }

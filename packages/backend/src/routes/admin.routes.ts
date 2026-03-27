@@ -7,6 +7,10 @@ import { liveAgentService } from '../modules/live-agent/live-agent.service.js';
 import { productService } from '../modules/products/product.service.js';
 import { knowledgeBaseService } from '../modules/knowledge/knowledge-base.service.js';
 import { llmRouter } from '../modules/llm/llm.router.js';
+import { taggingService } from '../modules/tagging/tagging.service.js';
+import { broadcastService } from '../modules/broadcast/broadcast.service.js';
+import { handleOrderQuery } from '../modules/orders/order-query.service.js';
+import { quickOrderService } from '../modules/orders/quick-order.service.js';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 
@@ -568,6 +572,18 @@ export async function adminRoutes(app: FastifyInstance) {
 
       const sources = { usedProducts: false, usedKnowledge: false, productCount: 0, kbCount: 0 };
 
+      // -1. Quick order command (keyword → create WC order; runs before everything else)
+      const quickReply = await quickOrderService.handleIfCommand(tenantId, message);
+      if (quickReply !== null) {
+        return { reply: quickReply, sources, model: 'quick-order', provider: 'system' };
+      }
+
+      // 0. Order query interception — must run FIRST (stateful, multi-turn)
+      const orderReply = await handleOrderQuery(tenantId, 'admin-chat-test', message);
+      if (orderReply !== null) {
+        return { reply: orderReply, sources, model: 'order-handler', provider: 'system' };
+      }
+
       // 1. Product search intent
       let productAiContext = '';
       if (productService.isProductQueryIntent(message)) {
@@ -628,5 +644,81 @@ export async function adminRoutes(app: FastifyInstance) {
 
       return { reply: reply_text, sources, model: llmResponse.model, provider: llmResponse.provider };
     });
+
+    // =========================================================
+    // ---- Audience & Tagging Routes ----
+    // =========================================================
+
+    // GET /api/admin/users — list users, optionally filtered by tag
+    protectedApp.get('/users', async (request: FastifyRequest) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const { tag, limit = '50', offset = '0' } = request.query as any;
+      return taggingService.listUsersByTag(tenantId, tag || undefined, parseInt(limit), parseInt(offset));
+    });
+
+    // GET /api/admin/tags — list distinct tags for this tenant
+    protectedApp.get('/tags', async (request: FastifyRequest) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const tags = await taggingService.listDistinctTags(tenantId);
+      return { tags };
+    });
+
+    // GET /api/admin/users/:userId/tags
+    protectedApp.get<{ Params: { userId: string } }>('/users/:userId/tags', async (request) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const { userId } = request.params;
+      const tags = await taggingService.getUserTags(tenantId, userId);
+      return { tags };
+    });
+
+    // POST /api/admin/users/:userId/tags — manually add a tag
+    protectedApp.post<{ Params: { userId: string } }>('/users/:userId/tags', async (request, reply) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const { userId } = request.params;
+      const { tag } = request.body as { tag: string };
+      if (!tag) return reply.status(400).send({ error: 'tag is required' });
+      await taggingService.addTag(tenantId, userId, tag);
+      return { success: true };
+    });
+
+    // DELETE /api/admin/users/:userId/tags/:tag — remove a tag
+    protectedApp.delete<{ Params: { userId: string; tag: string } }>('/users/:userId/tags/:tag', async (request) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const { userId, tag } = request.params;
+      await taggingService.removeTag(tenantId, userId, decodeURIComponent(tag));
+      return { success: true };
+    });
+
+    // =========================================================
+    // ---- Broadcast Routes ----
+    // =========================================================
+
+    // POST /api/admin/broadcast/preview — estimate recipient count before sending
+    protectedApp.post('/broadcast/preview', async (request: FastifyRequest, reply: FastifyReply) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const { tag_filter } = request.body as { tag_filter: string };
+      if (!tag_filter) return reply.status(400).send({ error: 'tag_filter is required' });
+      const recipients = await broadcastService.getRecipients(tenantId, tag_filter);
+      return { count: recipients.length };
+    });
+
+    // GET /api/admin/broadcast — list all campaigns
+    protectedApp.get('/broadcast', async (request: FastifyRequest) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const campaigns = await broadcastService.listCampaigns(tenantId);
+      return { campaigns };
+    });
+
+    // POST /api/admin/broadcast — create and send a campaign
+    protectedApp.post('/broadcast', async (request: FastifyRequest, reply: FastifyReply) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const { name, tag_filter, message } = request.body as { name: string; tag_filter: string; message: string };
+      if (!name || !tag_filter || !message) {
+        return reply.status(400).send({ error: 'name, tag_filter, and message are required' });
+      }
+      const campaignId = await broadcastService.createAndSend(tenantId, name, tag_filter, message);
+      return reply.status(202).send({ campaignId, status: 'sending' });
+    });
+
   });
 }

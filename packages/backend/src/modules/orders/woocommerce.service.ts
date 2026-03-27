@@ -39,13 +39,23 @@ export interface WooOrder {
 }
 
 const STATUS_MAP: Record<string, string> = {
-  pending: '待付款',
+  // Standard WooCommerce statuses
+  pending:    '待付款',
   processing: '處理中',
-  on_hold: '保留',
-  completed: '已完成',
-  cancelled: '已取消',
-  refunded: '已退款',
-  failed: '失敗',
+  on_hold:    '保留',
+  completed:  '已完成',
+  cancelled:  '已取消',
+  refunded:   '已退款',
+  failed:     '失敗',
+  // PPBears custom statuses (add more as needed)
+  'wc-printing':    '印刷中',
+  'printing':       '印刷中',
+  'wc-production':  '生產中',
+  'production':     '生產中',
+  'wc-shipped':     '已出貨',
+  'shipped':        '已出貨',
+  'wc-custom-status': '已進入生產流程',
+  'custom-status':    '已進入生產流程',
 };
 
 export class WooCommerceService {
@@ -151,45 +161,58 @@ export class WooCommerceService {
 
   /**
    * Format an order into a user-friendly text message.
+   * Fields: 最晚出貨日期, 訂單狀態, 出貨/物流, 付款方式/付款狀態, 商品需求縮減版
+   * PPBears meta keys sourced from class-ppbears-admin.php
    */
   formatOrderSummary(order: WooOrder): string {
     const status = STATUS_MAP[order.status] || order.status;
-    const name = `${order.billing.last_name}${order.billing.first_name}`;
-    const date = new Date(order.date_created).toLocaleDateString('zh-TW');
-    const items = order.line_items.map(i => `・${i.name} x${i.quantity}`).join('\n');
 
-    // Parse meta_data for logistics info
     const getMeta = (key: string) => order.meta_data?.find(m => m.key === key)?.value || '';
-    const trackingNumber = getMeta('tracking_number') || getMeta('_tracking_number') || getMeta('wcfm_tracking_no');
-    const shippingMethod = order.shipping_lines?.[0]?.method_title || getMeta('_shipping_method_title') || '未設定';
-    const pickupStore = getMeta('pickup_store') || getMeta('_ecpay_logistics_store_name') || getMeta('_store_name') || getMeta('st_pickup_store');
-    const paymentMethod = order.payment_method_title || getMeta('_payment_method_title') || '未設定';
-    const isPaid = order.date_paid ? '已付款成功' : '尚未付款';
 
-    const lines = [
-      `📦 訂單 #${order.number} 查詢結果`,
-      ``,
-      `1) 訂單狀態：${status}（${order.status}）`,
-      `2) 出貨/物流：${trackingNumber ? `物流單號 ${trackingNumber}` : '目前尚未出貨，還沒有物流單號'}`,
-      `3) 配送方式：${shippingMethod}`,
-    ];
+    // 1) 最晚出貨日期 — saved as _ppbears_latest_ship_by (YYYY-MM-DD)
+    const rawShipDate = getMeta('_ppbears_latest_ship_by');
+    const latestShipDate = rawShipDate || '（未填寫）';
 
-    if (pickupStore) {
-      lines.push(`4) 取貨門市：${pickupStore}`);
-      lines.push(`5) 付款方式／付款狀態：${paymentMethod}，${isPaid}`);
-    } else {
-      const addr = [order.shipping.city, order.shipping.address_1].filter(Boolean).join(' ') || '未設定';
-      lines.push(`4) 配送地址：${addr}`);
-      lines.push(`5) 付款方式／付款狀態：${paymentMethod}，${isPaid}`);
+    // 2) 訂單狀態 — only show raw slug in brackets when there is no Chinese mapping
+    const hasCnMapping = order.status in STATUS_MAP || `wc-${order.status}` in STATUS_MAP;
+    const statusLine = hasCnMapping ? status : `${status}（${order.status}）`;
+
+    // 3) 出貨/物流 — YITH WooCommerce Order Tracking Premium
+    //    Meta keys: ywot_tracking_code, ywot_carrier_id, ywot_pick_up_date
+    let shippingLine = '目前尚未出貨，還沒有物流單號';
+
+    const trackingCode  = getMeta('ywot_tracking_code');
+    const carrierId     = getMeta('ywot_carrier_id') || getMeta('ywot_carrier_name');
+    const pickUpDate    = getMeta('ywot_pick_up_date');
+
+    if (trackingCode) {
+      shippingLine = [
+        `物流單號：${trackingCode}`,
+        carrierId  ? `貨運商：${carrierId}`        : '',
+        pickUpDate ? `取件日期：${pickUpDate}`     : '',
+      ].filter(Boolean).join('　');
     }
 
-    lines.push('');
-    lines.push(`下單日期：${date}`);
-    lines.push(`訂購人：${name}`);
-    lines.push(`商品：\n${items}`);
-    lines.push(`總金額：${order.currency} ${order.total}`);
+    // 4) 付款方式／付款狀態
+    const paymentMethod = order.payment_method_title || getMeta('_payment_method_title') || '未設定';
+    const isPaid = order.date_paid ? '已付款成功' : '尚未付款';
+    const paymentLine = `${paymentMethod}，${isPaid}`;
 
-    return lines.join('\n');
+    // 5) 商品需求縮減版 — saved as _ppbears_requirements_short by PPBears plugin
+    //    Falls back to line item names if the field hasn't been filled in yet
+    const requirementsShort = getMeta('_ppbears_requirements_short');
+    const productSummary = requirementsShort ||
+      order.line_items.map(i => `・${i.name} x${i.quantity}`).join('\n');
+
+    return [
+      `📦 訂單 #${order.number} 查詢結果`,
+      ``,
+      `1) 最晚出貨日期：${latestShipDate}`,
+      `2) 訂單狀態：${statusLine}`,
+      `3) 出貨/物流：${shippingLine}`,
+      `4) 付款方式／付款狀態：${paymentLine}`,
+      `5) 商品需求縮減版：\n${productSummary}`,
+    ].join('\n');
   }
 
   /**

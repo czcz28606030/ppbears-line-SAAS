@@ -13,6 +13,10 @@ export default function SettingsPage() {
     message_gate_window_ms: '8000',
     bot_message_footer: '',
     admin_unlock_whitelist: '',
+    quick_order_keyword: 'ppbears888',
+    quick_order_product_id: '',
+    quick_order_product_url: '',
+    quick_order_reply_template: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -91,6 +95,35 @@ export default function SettingsPage() {
           )}
         </div>
       ),
+    },
+    {
+      title: '⚡ 快速開單設定',
+      fields: [
+        {
+          key: 'quick_order_keyword',
+          label: '觸發密碼（輸入此密碼開頭才會觸發開單）',
+          placeholder: 'ppbears888',
+          type: 'text',
+        },
+        {
+          key: 'quick_order_product_id',
+          label: 'WooCommerce 開單商品 ID（從 WP 後台商品頁 URL 取得）',
+          placeholder: '123',
+          type: 'text',
+        },
+        {
+          key: 'quick_order_product_url',
+          label: '開單商品網址（回覆訊息中顯示的商品連結）',
+          placeholder: 'https://ppbears.com/product/line1/',
+          type: 'text',
+        },
+        {
+          key: 'quick_order_reply_template',
+          label: '回覆訊息模板（支援 {name}、{order_number}、{product_url}、{amount}）',
+          placeholder: '哈囉～{name}您好😊\n這是您的專屬下單頁面：\n\n🔹 訂單ID：{order_number}\n🔹 商品連結：{product_url}',
+          type: 'textarea',
+        },
+      ],
     },
     {
       title: '⚙️ 行為設定',
