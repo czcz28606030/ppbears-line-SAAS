@@ -54,11 +54,13 @@ export class QuickOrderService {
     const s: Record<string, string> = {};
     for (const row of data || []) if (row.key && row.value) s[row.key] = row.value;
 
-    const wooBaseUrl     = s['woo_base_url'];
+    const rawWooBaseUrl   = s['woo_base_url'];
     const consumerKey    = s['woo_consumer_key'];
     const consumerSecret = s['woo_consumer_secret'];
 
-    if (!wooBaseUrl || !consumerKey || !consumerSecret) return null;
+    if (!rawWooBaseUrl || !consumerKey || !consumerSecret) return null;
+    // Auto-add www. to bypass Hostinger port-level firewall for non-www hostnames
+    const wooBaseUrl = rawWooBaseUrl.replace(/^(https?:\/\/)(?!www\.)/i, '$1www.');
 
     return {
       keyword:           s['quick_order_keyword']       || 'ppbears888',

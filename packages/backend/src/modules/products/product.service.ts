@@ -36,11 +36,13 @@ export class ProductService {
     const s: Record<string, string> = {};
     if (data) for (const row of data) if (row.key && row.value) s[row.key] = row.value;
 
-    const baseUrl = s['woo_base_url'] || process.env.WOO_BASE_URL;
+    const rawBaseUrl = s['woo_base_url'] || process.env.WOO_BASE_URL;
     const consumerKey = s['woo_consumer_key'] || process.env.WOO_CONSUMER_KEY;
     const consumerSecret = s['woo_consumer_secret'] || process.env.WOO_CONSUMER_SECRET;
 
-    if (!baseUrl || !consumerKey || !consumerSecret) return null;
+    if (!rawBaseUrl || !consumerKey || !consumerSecret) return null;
+    // Auto-add www. to bypass Hostinger port-level firewall for non-www hostnames
+    const baseUrl = rawBaseUrl.replace(/^(https?:\/\/)(?!www\.)/i, '$1www.');
     return { baseUrl, consumerKey, consumerSecret };
   }
 
