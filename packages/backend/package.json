@@ -1,6 +1,6 @@
 {
-  "name": "@ppbears/backend",
-  "version": "0.4.1",
+  "name": "@ppbears/admin",
+  "version": "0.4.2",
   "private": true,
   "type": "module",
   "scripts": {

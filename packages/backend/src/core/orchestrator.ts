@@ -19,21 +19,6 @@ import { quickOrderService } from '../modules/orders/quick-order.service.js';
 const log = createLogger({ module: 'Orchestrator' });
 
 /**
- * In-memory store for phone models awaiting customer confirmation.
- * Key: `${tenantId}:${userId}`, Value: pending tag slug (e.g. "phone:iphone-16-pro")
- * Cleared when customer confirms or moves on to a different topic.
- */
-const pendingPhoneTagMap = new Map<string, string>();
-
-/** Returns true if the message is a short "yes" confirmation in Chinese/English. */
-function isConfirmation(text: string): boolean {
-  const t = text.trim().toLowerCase();
-  // Common short confirmations — avoids false positives from longer sentences
-  const CONFIRM_PATTERNS = /^(是|對|好|yes|yep|yup|嗯|對的|是的|沒錯|正確|就是|ok|👍|確認|確定|就是這個|就是這款|就是|這個|這款|✓|correct|right|exactly)$/i;
-  return CONFIRM_PATTERNS.test(t);
-}
-
-/**
  * Core orchestrator: the central brain that routes each incoming message
  * through the correct pipeline (admin vs customer, live agent check, etc.)
  */
@@ -161,23 +146,6 @@ export class Orchestrator {
 
       // --- Phase 2: Product search intent — inject results into AI context ---
       let productAiContext = '';
-      let pendingPhoneTagForThisTurn: string | null = null;
-
-      const pendingKey = `${tenantId}:${userId}`;
-
-      // Check if the PREVIOUS turn set a pending phone model AND this message is a confirmation
-      const existingPending = pendingPhoneTagMap.get(pendingKey);
-      if (existingPending && isConfirmation(mergedContent)) {
-        // Customer confirmed! Save the tag.
-        taggingService.saveTags(tenantId, userId, [existingPending], 'ai_detected').catch((err: any) =>
-          log.error({ err: err.message }, 'Failed to save confirmed phone model tag'),
-        );
-        log.info({ tenantId, userId, tag: existingPending }, 'Phone model tag confirmed and saved');
-        pendingPhoneTagMap.delete(pendingKey);
-      } else if (existingPending && mergedContent.length > 30) {
-        // Customer sent a long message — probably moved on; clear the pending
-        pendingPhoneTagMap.delete(pendingKey);
-      }
 
       if (productService.isProductQueryIntent(mergedContent)) {
         const searchKeyword = productService.extractSearchKeyword(mergedContent);
@@ -186,19 +154,18 @@ export class Orchestrator {
           productAiContext = productService.formatProductsAsAiContext(products);
           log.info({ tenantId, searchKeyword, found: products.length }, 'Product search context injected into AI prompt');
 
-          // Extract phone model from the BEST MATCHING PRODUCT's phone_models field.
-          // This is more reliable than parsing the customer's raw message text,
-          // because the product index already has normalized, standardized model names.
+          // Immediately tag the user with the phone model from the best matching product.
+          // We do NOT require a two-turn confirmation — the intent is clear enough.
           const bestProduct = products[0];
           const tagFromProduct = taggingService.extractTagFromProduct(
             bestProduct.phone_models || '',
             bestProduct.name,
           );
           if (tagFromProduct) {
-            pendingPhoneTagForThisTurn = tagFromProduct;
-            pendingPhoneTagMap.set(pendingKey, pendingPhoneTagForThisTurn);
-            // Instruct AI to ask customer to confirm the model
-            productAiContext += `\n\n⚠️ 系統提示（僅限 AI 參考，不要輸出這行）：偵測到手機型號「${pendingPhoneTagForThisTurn.replace('phone:', '').replace(/-/g, ' ')}」，請在回覆結尾加上一句：「請問是這款手機嗎？」讓客戶確認。`;
+            taggingService.saveTags(tenantId, userId, [tagFromProduct], 'ai_detected').catch((err: any) =>
+              log.error({ err: err.message }, 'Failed to save phone model tag'),
+            );
+            log.info({ tenantId, userId, tag: tagFromProduct }, 'Phone model tag saved immediately on product match');
           }
         }
       }
