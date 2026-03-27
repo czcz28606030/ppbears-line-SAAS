@@ -11,6 +11,7 @@ import { taggingService } from '../modules/tagging/tagging.service.js';
 import { broadcastService } from '../modules/broadcast/broadcast.service.js';
 import { handleOrderQuery } from '../modules/orders/order-query.service.js';
 import { quickOrderService } from '../modules/orders/quick-order.service.js';
+import { wooRequest } from '../utils/woo-request.js';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 
@@ -121,12 +122,8 @@ export async function adminRoutes(app: FastifyInstance) {
 
       try {
         const url = `${baseUrl.replace(/\/$/, '')}/wp-json/wc/v3/orders?per_page=1&consumer_key=${consumerKey}&consumer_secret=${consumerSecret}`;
-        const res = await fetch(url, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
-          }
-        });
-        const body = await res.text().catch(() => '');
+        const res = await wooRequest(url);
+        const body = await res.text();
         diagnosis.api_status = res.status;
         diagnosis.api_ok = res.ok;
         diagnosis.api_response_preview = body.substring(0, 200);

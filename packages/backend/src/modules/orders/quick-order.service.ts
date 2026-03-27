@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from '../../utils/supabase.js';
 import { createLogger } from '../../utils/logger.js';
+import { wooRequest } from '../../utils/woo-request.js';
 
 const log = createLogger({ module: 'QuickOrder' });
 
@@ -106,9 +107,7 @@ export class QuickOrderService {
     let templateFields: Record<string, any> = {};
     if (templateProductId) {
       try {
-        const tRes = await fetch(`${base}/wp-json/wc/v3/products/${templateProductId}?${auth}`, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36' }
-        });
+        const tRes = await wooRequest(`${base}/wp-json/wc/v3/products/${templateProductId}?${auth}`);
         if (tRes.ok) {
           const t = await tRes.json() as Record<string, any>;
           templateFields = {
@@ -140,12 +139,8 @@ export class QuickOrderService {
     };
 
     try {
-      const res = await fetch(`${base}/wp-json/wc/v3/products?${auth}`, {
+      const res = await wooRequest(`${base}/wp-json/wc/v3/products?${auth}`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'
-        },
         body: JSON.stringify(productPayload),
       });
 

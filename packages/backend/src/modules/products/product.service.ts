@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from '../../utils/supabase.js';
 import { createLogger } from '../../utils/logger.js';
+import { wooRequest } from '../../utils/woo-request.js';
 
 const log = createLogger({ module: 'ProductService' });
 
@@ -15,12 +16,6 @@ export interface WooProduct {
   attributes: Array<{ name: string; options: string[] }>;
   status: string;
 }
-
-const WOO_FETCH_OPTIONS = {
-  headers: {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'
-  }
-};
 
 export class ProductService {
   /**
@@ -94,7 +89,7 @@ export class ProductService {
     try {
       // Fetch subcategories of this parent
       const apiUrl = `${baseUrl}/wp-json/wc/v3/products/categories?parent=${parentId}&per_page=100&consumer_key=${consumerKey}&consumer_secret=${consumerSecret}`;
-      const res = await fetch(apiUrl, WOO_FETCH_OPTIONS);
+      const res = await wooRequest(apiUrl);
       if (!res.ok) return ids;
       const subs = await res.json() as Array<{ id: number }>;
       if (!Array.isArray(subs) || !subs.length) return ids;
@@ -177,7 +172,7 @@ export class ProductService {
 
               // Step 1: Resolve category slug → WooCommerce category ID
               const catApiUrl = `${creds.baseUrl}/wp-json/wc/v3/products/categories?slug=${encodeURIComponent(catSlug)}&consumer_key=${creds.consumerKey}&consumer_secret=${creds.consumerSecret}`;
-              const catRes = await fetch(catApiUrl, WOO_FETCH_OPTIONS);
+              const catRes = await wooRequest(catApiUrl);
               if (!catRes.ok) { errors++; continue; }
               const cats = await catRes.json() as Array<{ id: number; name: string }>;
               if (!Array.isArray(cats) || !cats.length) {
@@ -198,7 +193,7 @@ export class ProductService {
                 let catPage = 1;
                 while (true) {
                   const prodUrl = `${creds.baseUrl}/wp-json/wc/v3/products?category=${catId}&per_page=100&page=${catPage}&status=publish&consumer_key=${creds.consumerKey}&consumer_secret=${creds.consumerSecret}`;
-                  const prodRes = await fetch(prodUrl, WOO_FETCH_OPTIONS);
+                  const prodRes = await wooRequest(prodUrl);
                   if (!prodRes.ok) break;
                   const catProducts = await prodRes.json();
                   // Guard: WooCommerce may return an error object instead of array on last page
@@ -217,7 +212,7 @@ export class ProductService {
               if (!slug) { errors++; continue; }
 
               const apiUrl = `${creds.baseUrl}/wp-json/wc/v3/products?slug=${encodeURIComponent(slug)}&consumer_key=${creds.consumerKey}&consumer_secret=${creds.consumerSecret}`;
-              const res = await fetch(apiUrl, WOO_FETCH_OPTIONS);
+              const res = await wooRequest(apiUrl);
               if (!res.ok) { errors++; continue; }
               const results = await res.json() as WooProduct[];
               if (results.length > 0) {
@@ -238,7 +233,7 @@ export class ProductService {
         let page = 1;
         while (true) {
           const apiUrl = `${creds.baseUrl}/wp-json/wc/v3/products?per_page=100&page=${page}&consumer_key=${creds.consumerKey}&consumer_secret=${creds.consumerSecret}&status=publish`;
-          const res = await fetch(apiUrl, WOO_FETCH_OPTIONS);
+          const res = await wooRequest(apiUrl);
           if (!res.ok) break;
           const products = await res.json() as WooProduct[];
           if (!products.length) break;

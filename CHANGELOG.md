@@ -2,6 +2,10 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
+## [v0.2.7] - 2026-03-27
+### 🐛 Hotfix
+- **WooCommerce 連線根本修正**：新增 `woo-request.ts` 工具函式，改用 Node.js 原生 `node:https` 模組（替代 Node 18 內建 `undici`/`fetch`）進行所有 WooCommerce API 請求。根本原因：Render 雲端環境中 `undici` 使用的 Happy Eyeballs 演算法被 Hostinger/Imunify360 防火牆在 TCP 層級阻擋，導致 `AggregateError`，而原生 `https` 模組使用不同的連線機制可成功穿透。
+
 ## [v0.2.6] - 2026-03-27
 ### 🐛 Hotfix
 - **WooCommerce API 連線修正**：為所有對 WooCommerce 的 API 請求（包含連線測試、訂單查詢、快速開單與商品同步）加入標準 `User-Agent` 標頭，解決雲端部署後因 Node.js 預設 User-Agent 被防火牆（WAF）阻擋導致的 `fetch failed` 錯誤。
