@@ -121,16 +121,32 @@ export async function adminRoutes(app: FastifyInstance) {
       }
 
       try {
+        // Step 1: DNS resolution check
+        const { diagnoseDns } = await import('../utils/woo-request.js');
+        const hostname = new URL(baseUrl).hostname;
+        const dnsResult = await diagnoseDns(hostname);
+        diagnosis.dns_check = dnsResult.ok ? `\u2705 ${dnsResult.detail}` : `\u274c DNS failed: ${dnsResult.detail}`;
+
+        if (!dnsResult.ok) {
+          return { ok: false, diagnosis, error: `DNS resolution failed for ${hostname}: ${dnsResult.detail}` };
+        }
+
+        // Step 2: WooCommerce API
         const url = `${baseUrl.replace(/\/$/, '')}/wp-json/wc/v3/orders?per_page=1&consumer_key=${consumerKey}&consumer_secret=${consumerSecret}`;
         const res = await wooRequest(url);
         const body = await res.text();
         diagnosis.api_status = res.status;
         diagnosis.api_ok = res.ok;
-        diagnosis.api_response_preview = body.substring(0, 200);
+        diagnosis.api_response_preview = body.substring(0, 300);
         return { ok: res.ok, diagnosis };
       } catch (err: any) {
-        log.error({ err: err.message, cause: err.cause, stack: err.stack }, 'WooCommerce connection test failed');
-        const detailedError = err.cause ? `${err.message} (Cause: ${err.cause.message || err.cause})` : err.message;
+        const code: string = err.code || '';
+        const syscall: string = err.syscall || '';
+        const msg: string = err.message || String(err) || '(no message)';
+        const detailedError = [msg, code ? `code:${code}` : '', syscall ? `syscall:${syscall}` : ''].filter(Boolean).join(' | ');
+        log.error({ msg, code, syscall, stack: err.stack }, 'WooCommerce connection test failed');
+        diagnosis.raw_error_code = code || '(none)';
+        diagnosis.raw_error_syscall = syscall || '(none)';
         return { ok: false, diagnosis, error: detailedError };
       }
     });

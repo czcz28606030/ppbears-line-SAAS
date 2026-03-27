@@ -2,21 +2,24 @@
  * woo-request.ts
  *
  * WooCommerce HTTP utility using Node.js native `https`/`http` modules.
- *
- * WHY: Node.js 18+ built-in `fetch` uses `undici` which throws `AggregateError`
- * when a shared-hosting server (e.g. Hostinger + Imunify360) blocks cloud
- * provider IP ranges at the TCP level. The legacy `node:https` module uses a
- * different connection implementation and typically bypasses these restrictions.
+ * Also exposes a `diagnoseDns()` helper for debugging connectivity.
  */
 
 import https from 'node:https';
 import http from 'node:http';
+import dns from 'node:dns/promises';
 
 export interface WooResponse {
   status: number;
   ok: boolean;
   text(): Promise<string>;
   json<T = any>(): Promise<T>;
+}
+
+export interface DiagResult {
+  step: string;
+  ok: boolean;
+  detail: string;
 }
 
 type WooRequestOptions = {
@@ -27,9 +30,19 @@ type WooRequestOptions = {
 };
 
 /**
+ * DNS check: returns the resolved IPs for a hostname, or an error string.
+ */
+export async function diagnoseDns(hostname: string): Promise<DiagResult> {
+  try {
+    const addresses = await dns.resolve4(hostname);
+    return { step: 'DNS', ok: true, detail: `Resolved to: ${addresses.join(', ')}` };
+  } catch (err: any) {
+    return { step: 'DNS', ok: false, detail: `${err.code || ''} ${err.message || String(err)}`.trim() };
+  }
+}
+
+/**
  * Make an HTTP/HTTPS request using Node.js core modules (not undici/fetch).
- * This avoids `AggregateError` failures caused by cloud-provider IP blocking
- * that affects undici differently from the classic https agent.
  */
 export function wooRequest(url: string, options: WooRequestOptions = {}): Promise<WooResponse> {
   return new Promise((resolve, reject) => {
@@ -66,10 +79,20 @@ export function wooRequest(url: string, options: WooRequestOptions = {}): Promis
     );
 
     req.on('timeout', () => {
-      req.destroy(new Error(`WooCommerce request timed out (15s) for ${uri.hostname}`));
+      req.destroy(new Error(`Connection timed out after 15s connecting to ${uri.hostname}`));
     });
 
-    req.on('error', (err) => {
+    req.on('error', (err: NodeJS.ErrnoException) => {
+      // Enrich error message with Node error code/syscall for diagnosis
+      const code = err.code ? ` [${err.code}]` : '';
+      const syscall = err.syscall ? ` syscall:${err.syscall}` : '';
+      const msg = err.message || String(err);
+      if (!err.message) {
+        // Mutate to ensure message is non-empty
+        (err as any).message = `Connection error${code}${syscall}`;
+      } else {
+        (err as any).message = `${msg}${code}${syscall}`;
+      }
       reject(err);
     });
 
