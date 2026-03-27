@@ -121,6 +121,14 @@ export async function adminRoutes(app: FastifyInstance) {
       }
 
       try {
+        // Step 0: Fetch Render Outbound IP
+        try {
+          const ipRes = await wooRequest('https://api.ipify.org?format=text');
+          diagnosis.render_outbound_ip = ipRes.ok ? await ipRes.text() : '(Failed to fetch IP)';
+        } catch (e) {
+          diagnosis.render_outbound_ip = '(Failed to fetch IP)';
+        }
+
         // Step 1: DNS resolution check
         const { diagnoseDns } = await import('../utils/woo-request.js');
         const hostname = new URL(baseUrl).hostname;
