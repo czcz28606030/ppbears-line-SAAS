@@ -137,6 +137,9 @@ export class QuickOrderService {
       status: 'publish',
       catalog_visibility: 'hidden',  // direct URL works but not listed in shop
       regular_price: amount,
+      meta_data: [
+        { key: '_is_quick_order', value: 'yes' },
+      ],
       ...templateFields,
     };
 
