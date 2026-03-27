@@ -153,14 +153,14 @@ export class Orchestrator {
           productAiContext = productService.formatProductsAsAiContext(products);
           log.info({ tenantId, searchKeyword, found: products.length }, 'Product search context injected into AI prompt');
         }
+      }
 
-        // --- Auto-tag phone models mentioned in the message (fire-and-forget) ---
-        const phoneModels = taggingService.extractPhoneModels(mergedContent);
-        if (phoneModels.length > 0) {
-          taggingService.saveTags(tenantId, userId, phoneModels, 'ai_detected').catch((err: any) =>
-            log.error({ err: err.message }, 'Failed to save phone model tags'),
-          );
-        }
+      // --- Auto-tag phone models on EVERY message (fire-and-forget) ---
+      const phoneModels = taggingService.extractPhoneModels(mergedContent);
+      if (phoneModels.length > 0) {
+        taggingService.saveTags(tenantId, userId, phoneModels, 'ai_detected').catch((err: any) =>
+          log.error({ err: err.message }, 'Failed to save phone model tags'),
+        );
       }
 
       // --- Phase 2: Knowledge base RAG context enrichment ---

@@ -26,12 +26,18 @@ const MODEL_PATTERNS: Array<{ brand: string; regex: RegExp }> = [
     brand: 'iphone',
     regex: /iphone\s*(\d{1,2})\s*(pro\s*max|pro\s*plus|pro|plus|max|mini|ultra)?/gi,
   },
+  // Bare iPhone model numbers without "iPhone" prefix: 16PROMAX, 16pro, 15plus, 14, etc.
+  // Must be standalone (word boundary) to avoid matching random numbers
+  {
+    brand: 'iphone',
+    regex: /\b(1[0-9])\s*(pro\s*max|promax|pro\s*plus|pro|plus|max|mini|ultra)\b/gi,
+  },
   // Apple iPad
   {
     brand: 'ipad',
     regex: /ipad\s*(pro|air|mini|)?\s*(\d{0,2})?\s*(m\d)?/gi,
   },
-  // Samsung Galaxy S / A / Z series — e.g. Galaxy S25 Ultra, S24 FE
+  // Samsung Galaxy S / A / Z series — e.g. Galaxy S25 Ultra, S24 FE, S25ultra (bare)
   {
     brand: 'samsung',
     regex: /(?:galaxy\s*)?([sz]\d{1,2}(?:\s*(?:ultra|plus|\+|fe|edge))?|a\d{2}(?:\s*(?:ultra|plus|\+|fe))?)/gi,
