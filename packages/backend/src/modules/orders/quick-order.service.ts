@@ -153,9 +153,8 @@ export class QuickOrderService {
       }
 
       const product = await res.json() as { id: number; permalink: string };
-      const cleanUrl = product.permalink.replace(/^(https?:\/\/)www\./, '$1');
-      log.info({ productId: product.id, permalink: cleanUrl, name, amount }, 'Quick order product created');
-      return { productId: product.id, permalink: cleanUrl };
+      log.info({ productId: product.id, permalink: product.permalink, name, amount }, 'Quick order product created');
+      return { productId: product.id, permalink: product.permalink };
     } catch (err: any) {
       log.error({ err: err.message }, 'QuickOrder WC product API error');
       return null;
