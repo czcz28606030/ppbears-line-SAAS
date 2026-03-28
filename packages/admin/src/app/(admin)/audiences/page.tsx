@@ -207,9 +207,13 @@ export default function AudiencesPage() {
             fontSize: 14,
           }}
         >
-          <option value="">— 所有標籤（顯示全部用戶）—</option>
+          <option value="" style={{ background: 'var(--surface)', color: 'var(--text)' }}>
+            — 所有標籤（顯示全部用戶）—
+          </option>
           {allTags.map((t) => (
-            <option key={t} value={t}>{t}</option>
+            <option key={t} value={t} style={{ background: 'var(--surface)', color: 'var(--text)' }}>
+              {t}
+            </option>
           ))}
         </select>
 
