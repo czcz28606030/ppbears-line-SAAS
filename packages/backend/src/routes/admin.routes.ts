@@ -755,6 +755,36 @@ export async function adminRoutes(app: FastifyInstance) {
       return { success: true };
     });
 
+    // GET /api/admin/users/:userId/conversations — recent messages for audience review
+    protectedApp.get<{ Params: { userId: string } }>('/users/:userId/conversations', async (request) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const { userId } = request.params;
+      const db = getSupabaseAdmin();
+
+      // Find the most recent conversation for this user
+      const { data: conv } = await db
+        .from('conversations')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .order('started_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (!conv) return { messages: [] };
+
+      // Fetch last 20 messages (oldest first for display)
+      const { data: messages } = await db
+        .from('messages')
+        .select('role, content, created_at')
+        .eq('conversation_id', conv.id)
+        .eq('tenant_id', tenantId)
+        .order('created_at', { ascending: true })
+        .limit(20);
+
+      return { messages: messages || [] };
+    });
+
     // =========================================================
     // ---- Broadcast Routes ----
     // =========================================================

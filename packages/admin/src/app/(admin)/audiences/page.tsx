@@ -18,6 +18,12 @@ interface TagRow {
   created_at: string;
 }
 
+interface MessageRow {
+  role: string;
+  content: string;
+  created_at: string;
+}
+
 export default function AudiencesPage() {
   const [allTags, setAllTags] = useState<string[]>([]);
   const [selectedTag, setSelectedTag] = useState('');
@@ -28,6 +34,7 @@ export default function AudiencesPage() {
   // For per-user tag management panel
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
   const [userTags, setUserTags] = useState<TagRow[]>([]);
+  const [convoMessages, setConvoMessages] = useState<MessageRow[]>([]);
   const [newTag, setNewTag] = useState('');
   const [tagActionLoading, setTagActionLoading] = useState(false);
   const [error, setError] = useState('');
@@ -71,9 +78,14 @@ export default function AudiencesPage() {
       return;
     }
     setExpandedUser(userId);
+    setConvoMessages([]);
     try {
-      const res = await apiFetch<{ tags: TagRow[] }>(`/api/admin/users/${userId}/tags`);
-      setUserTags(res.tags);
+      const [tagsRes, convoRes] = await Promise.all([
+        apiFetch<{ tags: TagRow[] }>(`/api/admin/users/${userId}/tags`),
+        apiFetch<{ messages: MessageRow[] }>(`/api/admin/users/${userId}/conversations`),
+      ]);
+      setUserTags(tagsRes.tags);
+      setConvoMessages(convoRes.messages);
     } catch {}
   };
 
@@ -250,6 +262,44 @@ export default function AudiencesPage() {
                     background: 'var(--surface)',
                   }}
                 >
+                  {/* Conversation Preview */}
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: 'var(--text-muted)' }}>
+                    💬 最近對話
+                  </div>
+                  <div
+                    style={{
+                      maxHeight: 260, overflowY: 'auto', display: 'flex', flexDirection: 'column',
+                      gap: 6, marginBottom: 16, padding: '8px', background: 'var(--background)',
+                      borderRadius: 8, border: '1px solid var(--border)',
+                    }}
+                  >
+                    {convoMessages.length === 0 ? (
+                      <span style={{ color: 'var(--text-muted)', fontSize: 12, textAlign: 'center', padding: '12px 0' }}>尚無對話紀錄</span>
+                    ) : (
+                      convoMessages.map((m, i) => (
+                        <div
+                          key={i}
+                          style={{
+                            display: 'flex',
+                            justifyContent: m.role === 'user' ? 'flex-start' : 'flex-end',
+                          }}
+                        >
+                          <span
+                            style={{
+                              maxWidth: '80%', padding: '6px 10px', borderRadius: 10, fontSize: 12,
+                              lineHeight: 1.5, wordBreak: 'break-word',
+                              background: m.role === 'user' ? '#3b82f622' : '#6b728022',
+                              color: m.role === 'user' ? '#60a5fa' : 'var(--text-muted)',
+                              border: `1px solid ${m.role === 'user' ? '#3b82f644' : '#6b728044'}`,
+                            }}
+                          >
+                            {m.content}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
                   <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: 'var(--text-muted)' }}>
                     所有標籤
                   </div>

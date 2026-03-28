@@ -2,6 +2,12 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
+## [v0.4.4] - 2026-03-28
+### ✨ 功能
+- **受眾管理對話審核**：在受眾管理頁面展開任一用戶後，可查看其最近 20 則對話訊息（氣泡呈現，user 靠左藍色、AI 靠右灰色），方便人工審核 AI 打的標籤是否正確。
+- **標籤格式升級（含品牌前綴）**：修正 `tagging.service.ts` 的 `extractPhoneModels()`，改用 `normalizeModelTagWithBrand(brand, raw)` 確保標籤永遠包含品牌前綴（例如 `phone:samsung-s25-ultra` 而非 `phone:s25-ultra`），解決不同品牌相同型號的混淆問題。
+- **後端新增 API**：`GET /api/admin/users/:userId/conversations`，回傳該用戶最近一次對話的最近 20 則訊息。
+
 ## [v0.4.3] - 2026-03-27
 ### ✨ 真人客服時段設定
 - **後端**：`orchestrator.ts` 轉接邏輯改為從 `tenant_settings` 讀取服務時段（`live_agent_hours_start`/`live_agent_hours_end`）。若客戶輸入「真人」時超出時段，回覆「非服務時間訊息」，不執行轉接；在時段內則正常轉接並回覆「接通成功訊息」。時間比對使用 Asia/Taipei 台灣時區。若未設定時段則維持全天可轉接（向下相容）。

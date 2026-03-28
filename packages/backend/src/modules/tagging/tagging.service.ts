@@ -17,6 +17,25 @@ function normalizeModelTag(raw: string): string {
 }
 
 /**
+ * Normalizes a matched model string WITH guaranteed brand prefix.
+ * Strips any redundant brand word already in `raw` to avoid duplication.
+ * e.g. brand="samsung", raw="S25 Ultra" → "phone:samsung-s25-ultra"
+ * e.g. brand="iphone",  raw="iPhone 16 Pro" → "phone:iphone-16-pro"
+ */
+function normalizeModelTagWithBrand(brand: string, raw: string): string {
+  const BRAND_PREFIXES =
+    /^(iphone|samsung|galaxy|xiaomi|redmi|poco|google|pixel|oppo|oneplus|realme|vivo|huawei|sony|xperia|asus|rog\s*phone|zenfone|ipad|小米|紅米|三星|蘋果|華為|華碩|谷歌|索尼)\s*/i;
+  const modelSlug = raw
+    .toLowerCase()
+    .replace(BRAND_PREFIXES, '')
+    .replace(/\s+/g, '-')
+    .replace(/[^\w-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  return `phone:${brand}-${modelSlug}`;
+}
+
+/**
  * Extraction rules: each entry defines a regex and how to build the display string.
  * We use named groups so we can reconstruct the canonical model name.
  */
@@ -109,10 +128,10 @@ export class TaggingService {
         regex.lastIndex = 0;
         let match: RegExpExecArray | null;
         while ((match = regex.exec(searchText)) !== null) {
-          // Reconstruct full model string from match
+          // Reconstruct full model string from match; use brand-aware slug
           const full = match[0].trim();
           if (full.length >= 2) {
-            found.add(normalizeModelTag(full));
+            found.add(normalizeModelTagWithBrand(brand, full));
           }
         }
       }
