@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { apiFetch } from '../../../lib/api';
-import { Tags, UserCircle, Plus, Trash2, Search, RefreshCw } from 'lucide-react';
+import { Tags, UserCircle, Plus, Trash2, Search, RefreshCw, Zap, X, Check } from 'lucide-react';
 import Link from 'next/link';
 
 interface UserRow {
@@ -38,6 +38,12 @@ export default function AudiencesPage() {
   const [newTag, setNewTag] = useState('');
   const [tagActionLoading, setTagActionLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Knowledge Correction Modal
+  const [correctionTarget, setCorrectionTarget] = useState<{ userMsg: string; aiMsg: string; timestamp: string } | null>(null);
+  const [correctionText, setCorrectionText] = useState('');
+  const [correctionLoading, setCorrectionLoading] = useState(false);
+  const [correctionSuccess, setCorrectionSuccess] = useState(false);
 
   const loadTags = useCallback(async () => {
     try {
@@ -124,6 +130,52 @@ export default function AudiencesPage() {
       setError(e.message);
     } finally {
       setTagActionLoading(false);
+    }
+  };
+
+  const handleOpenCorrection = (aiMsg: MessageRow, index: number) => {
+    // try to find the immediate previous user message as context
+    let prevUserMsg = '';
+    for (let i = index - 1; i >= 0; i--) {
+      if (convoMessages[i].role === 'user') {
+        prevUserMsg = convoMessages[i].content;
+        break;
+      }
+    }
+    setCorrectionTarget({
+      userMsg: prevUserMsg,
+      aiMsg: aiMsg.content,
+      timestamp: aiMsg.created_at,
+    });
+    setCorrectionText('');
+    setCorrectionSuccess(false);
+  };
+
+  const handleSubmitCorrection = async () => {
+    if (!correctionTarget || !correctionText.trim()) return;
+    setCorrectionLoading(true);
+    try {
+      const content = `【情境】：客戶詢問「${correctionTarget.userMsg || '(無前文)'}」\n【原本回覆】：${correctionTarget.aiMsg}\n\n【正確處理方式 / 知識點】：\n${correctionText.trim()}`;
+      
+      const payload = {
+        filename: `對話修正_${new Date(correctionTarget.timestamp).getTime()}_${Math.floor(Math.random() * 1000)}.txt`,
+        content,
+        category: 'manual_correction',
+      };
+
+      await apiFetch('/api/admin/knowledge/upload-text', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      
+      setCorrectionSuccess(true);
+      setTimeout(() => {
+        setCorrectionTarget(null);
+      }, 1500);
+    } catch (e: any) {
+      alert(`存入失敗: ${e.message}`);
+    } finally {
+      setCorrectionLoading(false);
     }
   };
 
@@ -281,20 +333,37 @@ export default function AudiencesPage() {
                           key={i}
                           style={{
                             display: 'flex',
-                            justifyContent: m.role === 'user' ? 'flex-start' : 'flex-end',
+                            flexDirection: 'column',
+                            alignItems: m.role === 'user' ? 'flex-end' : 'flex-start',
                           }}
                         >
-                          <span
-                            style={{
-                              maxWidth: '80%', padding: '6px 10px', borderRadius: 10, fontSize: 12,
-                              lineHeight: 1.5, wordBreak: 'break-word',
-                              background: m.role === 'user' ? '#3b82f622' : '#6b728022',
-                              color: m.role === 'user' ? '#60a5fa' : 'var(--text-muted)',
-                              border: `1px solid ${m.role === 'user' ? '#3b82f644' : '#6b728044'}`,
-                            }}
-                          >
-                            {m.content}
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                            {m.role === 'assistant' && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleOpenCorrection(m, i); }}
+                                title="修正回覆並存入知識庫"
+                                style={{
+                                  background: 'none', border: 'none', padding: 4, cursor: 'pointer',
+                                  color: 'var(--text-muted)', opacity: 0.6, marginTop: 4,
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                                onMouseLeave={e => e.currentTarget.style.opacity = '0.6'}
+                              >
+                                <Zap size={14} />
+                              </button>
+                            )}
+                            <span
+                              style={{
+                                maxWidth: '300px', padding: '6px 10px', borderRadius: 10, fontSize: 12,
+                                lineHeight: 1.5, wordBreak: 'break-word',
+                                background: m.role === 'user' ? '#3b82f622' : '#6b728022',
+                                color: m.role === 'user' ? '#60a5fa' : 'var(--text-muted)',
+                                border: `1px solid ${m.role === 'user' ? '#3b82f644' : '#6b728044'}`,
+                              }}
+                            >
+                              {m.content}
+                            </span>
+                          </div>
                         </div>
                       ))
                     )}
@@ -363,6 +432,92 @@ export default function AudiencesPage() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Correction Modal Overlay */}
+      {correctionTarget && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
+          background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backdropFilter: 'blur(4px)', padding: 16
+        }}>
+          <div className="card" style={{
+            width: '100%', maxWidth: 500, padding: 24, position: 'relative',
+            display: 'flex', flexDirection: 'column', gap: 16
+          }}>
+            <button
+              onClick={() => setCorrectionTarget(null)}
+              style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+            >
+              <X size={20} />
+            </button>
+            <h2 style={{ fontSize: 18, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Zap size={20} style={{ color: '#fbbf24' }} /> 修正 AI 回覆 (存入知識庫)
+            </h2>
+            
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', background: 'var(--background)', padding: 12, borderRadius: 8, border: '1px solid var(--border)' }}>
+              {correctionTarget.userMsg && (
+                <div style={{ marginBottom: 8 }}>
+                  <strong>客：</strong> {correctionTarget.userMsg}
+                </div>
+              )}
+              <div>
+                <strong>AI 原本：</strong> {correctionTarget.aiMsg}
+              </div>
+            </div>
+
+            {correctionSuccess ? (
+              <div style={{ padding: 24, textAlign: 'center', color: '#10b981', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                <div style={{ background: '#10b98122', padding: 12, borderRadius: '50%' }}>
+                  <Check size={32} />
+                </div>
+                <div style={{ fontWeight: 600 }}>已儲存至知識庫！自動關閉中...</div>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <div style={{ fontSize: 13, marginBottom: 6, fontWeight: 600 }}>請輸入期望的正確回答或處理方針：</div>
+                  <textarea
+                    value={correctionText}
+                    onChange={e => setCorrectionText(e.target.value)}
+                    placeholder="下次有人這樣問時，我希望 AI 回..."
+                    style={{
+                      width: '100%', height: 120, padding: 12, borderRadius: 8,
+                      border: '1px solid var(--border)', background: 'var(--background)',
+                      color: 'var(--text)', fontSize: 14, resize: 'vertical',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+                
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                  <button
+                    onClick={() => setCorrectionTarget(null)}
+                    disabled={correctionLoading}
+                    style={{
+                      padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)',
+                      background: 'transparent', color: 'var(--text)', cursor: 'pointer'
+                    }}
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={handleSubmitCorrection}
+                    disabled={correctionLoading || !correctionText.trim()}
+                    style={{
+                      padding: '8px 16px', borderRadius: 8, border: 'none',
+                      background: '#fbbf24', color: '#000', fontWeight: 600, cursor: 'pointer',
+                      opacity: correctionLoading || !correctionText.trim() ? 0.6 : 1,
+                      display: 'flex', alignItems: 'center', gap: 6
+                    }}
+                  >
+                    {correctionLoading ? '儲存中...' : '送出至知識庫'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
