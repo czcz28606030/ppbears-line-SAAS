@@ -63,26 +63,30 @@ export class Orchestrator {
       return;
     }
 
-    // 4. Check for live agent trigger phrases
-    if (liveAgentService.isTriggerPhrase(content)) {
+    // 4. Load live agent settings from tenant_settings
+    const db = getSupabaseAdmin();
+    const { data: settingsRows } = await db
+      .from('tenant_settings')
+      .select('key, value')
+      .eq('tenant_id', tenantId)
+      .in('key', ['live_agent_hours_start', 'live_agent_hours_end', 'live_agent_takeover_message', 'live_agent_off_hours_message', 'takeover_keywords']);
+
+    const s: Record<string, string> = {};
+    for (const r of settingsRows || []) if (r.key && r.value) s[r.key] = r.value;
+
+    const hoursStart = s['live_agent_hours_start'] || '';
+    const hoursEnd   = s['live_agent_hours_end'] || '';
+    const takeoverMsg = s['live_agent_takeover_message'] || '已為您轉接真人客服，請稍候。我們的客服人員會盡快回覆您！';
+    const offHoursMsg = s['live_agent_off_hours_message'] || '真人客服目前休息中，如有問題請先說明，客服看到後會盡快回覆您！';
+    // Default keywords if none configured
+    const defaultKeywords = ['真人', '轉真人', '我要找客服', '有人嗎', '客服處理'];
+    const customKeywords = s['takeover_keywords'] ? s['takeover_keywords'].split(',').map(k => k.trim()).filter(Boolean) : defaultKeywords;
+    const triggerPhrases = customKeywords.length > 0 ? customKeywords : defaultKeywords;
+
+    // Check for live agent trigger phrases
+    if (liveAgentService.isTriggerPhrase(content, triggerPhrases)) {
       const convId = await conversationService.getOrCreateConversation(tenantId, userId, channelType);
       await conversationService.saveMessage(tenantId, convId, 'user', content);
-
-      // Load live agent settings from tenant_settings
-      const db = getSupabaseAdmin();
-      const { data: settingsRows } = await db
-        .from('tenant_settings')
-        .select('key, value')
-        .eq('tenant_id', tenantId)
-        .in('key', ['live_agent_hours_start', 'live_agent_hours_end', 'live_agent_takeover_message', 'live_agent_off_hours_message']);
-
-      const s: Record<string, string> = {};
-      for (const r of settingsRows || []) if (r.key && r.value) s[r.key] = r.value;
-
-      const hoursStart = s['live_agent_hours_start'] || '';
-      const hoursEnd   = s['live_agent_hours_end'] || '';
-      const takeoverMsg = s['live_agent_takeover_message'] || '已為您轉接真人客服，請稍候。我們的客服人員會盡快回覆您！';
-      const offHoursMsg = s['live_agent_off_hours_message'] || '真人客服目前休息中，如有問題請先說明，客服看到後會盡快回覆您！';
 
       // Determine if we are within service hours (Taiwan time, Asia/Taipei)
       let withinHours = true;

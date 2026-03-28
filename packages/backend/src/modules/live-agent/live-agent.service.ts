@@ -5,8 +5,6 @@ import { writeAuditLog } from '../../utils/audit.js';
 
 const log = createLogger({ module: 'LiveAgent' });
 
-const TRIGGER_PHRASES = config.liveAgent.triggerPhrases;
-
 /**
  * Live agent module: manages human takeover sessions.
  */
@@ -14,9 +12,9 @@ export class LiveAgentService {
   /**
    * Check if the message contains a live agent trigger phrase.
    */
-  isTriggerPhrase(content: string): boolean {
+  isTriggerPhrase(content: string, triggerPhrases: string[]): boolean {
     const normalized = content.trim().toLowerCase();
-    return TRIGGER_PHRASES.some((phrase) => normalized.includes(phrase));
+    return triggerPhrases.some((phrase) => normalized.includes(phrase.toLowerCase()));
   }
 
   /**
