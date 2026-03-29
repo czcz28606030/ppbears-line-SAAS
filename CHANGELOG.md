@@ -2,6 +2,12 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
+## [v0.4.8] - 2026-03-29
+### ✨ 功能
+- **對話修正永久標記**：管理員對 AI 回覆點擊「⚡修正」並送出至知識庫後，系統現在會同步呼叫後端 API 在資料庫的 `messages` 表記錄 `corrected_at`（修正時間）與 `corrected_by`（修正人 email）。已修正的訊息在對話記錄頁面中，⚡ 按鈕會自動消失並改顯示黃色小標籤「⚡ 已加入知識庫」，滑鼠移上可查看修正者與時間，且標記永久保存、多人共用、重新整理後仍存在。
+- **後端新增 API**：`PATCH /api/admin/messages/:messageId/correct`，驗證訊息屬於當前 tenant 後寫入 `corrected_at` 與 `corrected_by`。
+- **DB Migration**：`messages` 資料表新增 `corrected_at TIMESTAMPTZ` 與 `corrected_by TEXT` 欄位（含 index）。
+
 ## [v0.4.7] - 2026-03-28
 ### ✨ 功能與優化
 - **對話紀錄頁面同步**：將 `conversations/[id]/page.tsx` 中訊息的對話氣泡方向對調，改為「客戶靠右(藍色)、AI靠左(灰色)」，並同步新增「⚡修正」按鈕，便於從所有對話紀錄中直接修正 AI 回覆並存入知識庫。

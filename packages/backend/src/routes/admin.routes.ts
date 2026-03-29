@@ -246,6 +246,35 @@ export async function adminRoutes(app: FastifyInstance) {
       return { conversation: conversation.data, messages: messages.data || [] };
     });
 
+    // Mark a message as corrected and saved to knowledge base
+    protectedApp.patch<{ Params: { messageId: string } }>('/messages/:messageId/correct', async (request: FastifyRequest<{ Params: { messageId: string } }>, reply: FastifyReply) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const adminEmail = (request as any).jwtUser.email;
+      const { messageId } = request.params;
+      const db = getSupabaseAdmin();
+
+      // Verify the message belongs to this tenant
+      const { data: msg } = await db
+        .from('messages')
+        .select('id')
+        .eq('id', messageId)
+        .eq('tenant_id', tenantId)
+        .single();
+
+      if (!msg) return reply.status(404).send({ error: 'Message not found' });
+
+      const correctedAt = new Date().toISOString();
+      const { error } = await db
+        .from('messages')
+        .update({ corrected_at: correctedAt, corrected_by: adminEmail })
+        .eq('id', messageId)
+        .eq('tenant_id', tenantId);
+
+      if (error) return reply.status(500).send({ error: error.message });
+
+      return { success: true, corrected_at: correctedAt };
+    });
+
     // Admin: activate live agent for a conversation (takeover by admin)
     protectedApp.post<{ Params: { id: string } }>('/conversations/:id/takeover', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
       const tenantId = (request as any).jwtUser.tenantId;

@@ -11,6 +11,8 @@ interface Message {
   content: string;
   created_at: string;
   metadata_json?: { provider?: string; model?: string };
+  corrected_at?: string | null;
+  corrected_by?: string | null;
 }
 
 interface ConversationDetail {
@@ -38,7 +40,7 @@ export default function ConversationDetailPage() {
   const [error, setError] = useState('');
 
   // Knowledge Correction Modal
-  const [correctionTarget, setCorrectionTarget] = useState<{ userMsg: string; aiMsg: string; timestamp: string } | null>(null);
+  const [correctionTarget, setCorrectionTarget] = useState<{ userMsg: string; aiMsg: string; timestamp: string; messageId?: string } | null>(null);
   const [correctionText, setCorrectionText] = useState('');
   const [correctionLoading, setCorrectionLoading] = useState(false);
   const [correctionSuccess, setCorrectionSuccess] = useState(false);
@@ -80,6 +82,7 @@ export default function ConversationDetailPage() {
       userMsg: prevUserMsg,
       aiMsg: aiMsg.content,
       timestamp: aiMsg.created_at,
+      messageId: aiMsg.id,
     });
     setCorrectionText('');
     setCorrectionSuccess(false);
@@ -101,6 +104,21 @@ export default function ConversationDetailPage() {
         method: 'POST',
         body: JSON.stringify(payload),
       });
+
+      // Mark message as corrected in DB and update local state immediately
+      if (correctionTarget.messageId) {
+        const result = await apiFetch<{ success: boolean; corrected_at: string }>(
+          `/api/admin/messages/${correctionTarget.messageId}/correct`,
+          { method: 'PATCH' }
+        );
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === correctionTarget.messageId
+              ? { ...m, corrected_at: result.corrected_at }
+              : m
+          )
+        );
+      }
       
       setCorrectionSuccess(true);
       setTimeout(() => {
@@ -221,7 +239,7 @@ export default function ConversationDetailPage() {
                         {msg.content}
                       </div>
 
-                      {msg.role === 'assistant' && (
+                      {msg.role === 'assistant' && !msg.corrected_at && (
                         <button
                           onClick={() => handleOpenCorrection(msg, i)}
                           title="修正回覆並存入知識庫"
@@ -234,6 +252,15 @@ export default function ConversationDetailPage() {
                         >
                           <Zap size={16} />
                         </button>
+                      )}
+                      {msg.role === 'assistant' && msg.corrected_at && (
+                        <div
+                          title={`由 ${msg.corrected_by || '管理員'} 於 ${new Date(msg.corrected_at).toLocaleString('zh-TW')} 修正`}
+                          style={{ marginTop: 6, fontSize: 11, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 4, opacity: 0.85 }}
+                        >
+                          <Zap size={10} />
+                          已加入知識庫
+                        </div>
                       )}
                     </div>
                   </div>
