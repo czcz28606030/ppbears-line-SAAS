@@ -98,22 +98,27 @@ export class Orchestrator {
       }
 
       const adapter = channelRegistry.get(channelType);
+      // Extract replyToken from raw event (prefer Reply API over Push API)
+      const triggerRawEvent = message.rawEvent as any;
+      const triggerReplyToken = triggerRawEvent?.replyToken;
+
+      const sendTriggerReply = async (replyContent: string) => {
+        if (!adapter) return;
+        if (triggerReplyToken && adapter.sendReplyWithToken) {
+          await adapter.sendReplyWithToken(tenantId, triggerReplyToken, [{ type: 'text', content: replyContent }]);
+        } else {
+          await adapter.sendReply(tenantId, platformUserId, [{ type: 'text', content: replyContent }]);
+        }
+      };
+
       if (withinHours) {
         // Within service hours: activate live agent and send takeover message
         await liveAgentService.activate(tenantId, userId, convId, `Trigger: "${content}"`);
-        if (adapter) {
-          await adapter.sendReply(tenantId, platformUserId, [
-            { type: 'text', content: takeoverMsg },
-          ]);
-        }
+        await sendTriggerReply(takeoverMsg);
       } else {
         // Outside service hours: send off-hours message, do NOT activate
         log.info({ tenantId, userId, hoursStart, hoursEnd }, 'Live agent trigger blocked — outside service hours');
-        if (adapter) {
-          await adapter.sendReply(tenantId, platformUserId, [
-            { type: 'text', content: offHoursMsg },
-          ]);
-        }
+        await sendTriggerReply(offHoursMsg);
       }
       return;
     }
