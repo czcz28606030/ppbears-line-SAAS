@@ -2,7 +2,12 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
+## [v0.5.0] - 2026-03-30
+### 🐛 Hotfix
+- **訂單查詢「查無訂單」根本修復**：移除 `woocommerce.service.ts` 中強制將 `WOO_BASE_URL` 加上 `www.` 前綴的正則替換邏輯（原在 v0.3.0 引入以穿透 Hostinger 防火牆）。此邏輯會將 `https://ppbears.com` 改成 `https://www.ppbears.com`，卻導致 WooCommerce REST API 的訂單查詢持續失敗（回傳 null），使 AI 客服誤回「查無訂單」。修正後直接使用設定中的 URL（僅去除尾端斜線），訂單查詢恢復正常。
+
 ## [v0.4.9] - 2026-03-29
+
 ### 🐛 Hotfix
 - **真人觸發詞回覆靜默問題修正（關鍵修復）**：修正客戶輸入「真人」等觸發詞後，系統已成功啟動真人接管、但「接通成功訊息」與「非服務時間訊息」卻靜默未發送的 Bug。根本原因：原本程式碼在觸發詞分支使用 `sendReply()`（LINE Push API），若後端缺少 Push 權限則靜默失敗。修正後改為優先使用 `sendReplyWithToken()`（LINE Reply API，利用對話的 replyToken），確保客戶一定能即時收到設定的回覆訊息。
 

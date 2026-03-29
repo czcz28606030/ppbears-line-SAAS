@@ -87,8 +87,8 @@ export class WooCommerceService {
     const consumerSecret = settings['woo_consumer_secret'] || process.env.WOO_CONSUMER_SECRET;
 
     if (!rawBaseUrl || !consumerKey || !consumerSecret) return null;
-    // Auto-add www. to bypass Hostinger port-level firewall for non-www hostnames
-    const baseUrl = rawBaseUrl.replace(/^(https?:\/\/)(?!www\.)/i, '$1www.');
+    // Use URL as-is (only strip trailing slash) — don't force www. which breaks Hostinger non-www endpoints
+    const baseUrl = rawBaseUrl.replace(/\/$/, '');
     return { baseUrl, consumerKey, consumerSecret };
   }
 
