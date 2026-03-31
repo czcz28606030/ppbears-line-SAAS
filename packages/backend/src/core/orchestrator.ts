@@ -193,7 +193,18 @@ export class Orchestrator {
       let productAiContext = '';
 
       if (productService.isProductQueryIntent(mergedContent)) {
-        const searchKeyword = productService.extractSearchKeyword(mergedContent);
+        let rawSearch = mergedContent;
+        // If the current message is very short (e.g., just "apple"), it might be a reply to a clarifying question.
+        // We prepend the previous user message from history to provide full context (e.g., "17" + "apple").
+        if (mergedContent.length < 15) {
+          // history includes the current message at the end, so we slice it off before searching
+          const prevUserMessage = [...history.slice(0, -1)].reverse().find(m => m.role === 'user');
+          if (prevUserMessage) {
+            rawSearch = `${prevUserMessage.content} ${rawSearch}`;
+          }
+        }
+        
+        const searchKeyword = productService.extractSearchKeyword(rawSearch);
         const products = await productService.searchProducts(tenantId, searchKeyword, 5);
         if (products.length > 0) {
           productAiContext = productService.formatProductsAsAiContext(products);
