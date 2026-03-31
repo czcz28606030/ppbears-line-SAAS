@@ -59,8 +59,7 @@ export class QuickOrderService {
     const consumerSecret = s['woo_consumer_secret'];
 
     if (!rawWooBaseUrl || !consumerKey || !consumerSecret) return null;
-    // Auto-add www. to bypass Hostinger port-level firewall for non-www hostnames
-    const wooBaseUrl = rawWooBaseUrl.replace(/^(https?:\/\/)(?!www\.)/i, '$1www.');
+    const wooBaseUrl = rawWooBaseUrl;
 
     return {
       keyword:           s['quick_order_keyword']       || 'ppbears888',
