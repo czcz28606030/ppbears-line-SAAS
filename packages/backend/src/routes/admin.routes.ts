@@ -479,8 +479,21 @@ export async function adminRoutes(app: FastifyInstance) {
           const result = await mammoth.extractRawText({ buffer });
           content = result.value;
         } else {
-          // txt, md, csv, json
-          content = buffer.toString('utf-8');
+          // txt, md, csv, json — smart encoding detection
+          const utf8 = buffer.toString('utf-8');
+          // UTF-8 BOM is EF BB BF
+          const hasBom = buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF;
+          // UTF-16 LE BOM is FF FE (Windows Notepad default)
+          const isUtf16LE = buffer[0] === 0xFF && buffer[1] === 0xFE;
+
+          if (isUtf16LE) {
+            // Decode as UTF-16 LE (Windows 記事本預設儲存格式)
+            content = buffer.slice(2).toString('utf16le');
+          } else if (hasBom) {
+            content = buffer.slice(3).toString('utf-8');
+          } else {
+            content = utf8;
+          }
         }
       } catch (err: any) {
         log.error({ err: err.message, fileType }, 'Failed to parse file content');

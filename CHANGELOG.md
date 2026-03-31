@@ -2,7 +2,12 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
-## [v0.5.1] - 2026-03-31
+## [v0.5.2] - 2026-03-31
+### 🐛 修正：知識庫上傳失敗（Extracted content is empty or unreadable）
+- **根本原因**：Windows「記事本」預設將 .txt 儲存為 **UTF-16 LE** 編碼（含 `FF FE` BOM），後端直接用 `buffer.toString('utf-8')` 解析導致內容全是亂碼，`content.trim()` 為空，才觸發此錯誤。
+- **修復方式**：上傳路由 `/knowledge/upload` 新增智慧編碼偵測：自動識別 **UTF-16 LE BOM**（`FF FE`）用 `utf16le` 解碼；識別 **UTF-8 BOM**（`EF BB BF`）去除 BOM 再解碼；其餘一律以標準 UTF-8 處理。
+
+## [v0.5.1]
 ### 🐛 修正：產品搜尋引擎升級 & AI 連結格式修正
 - **根本問題**：客戶輸入「小米17U」或「ROG7 Ultimate」時，`searchProducts()` 因使用嚴格 AND 策略（每個 token 都必須命中），且無中英文品牌同義詞轉換，導致搜尋回傳空白，AI 被迫改用知識庫裡的通用搜尋頁 URL 作答。
 - **搜尋引擎升級**：`searchProducts()` 重寫為「中英同義詞展開 + OR 策略 + Token 過濾 + 相關度重排」：輸入「小米」自動展開為 `xiaomi`、`mi`、`redmi` 同時比對；過濾掉 "U"、"A" 等無意義單字母 token；由 OR 撈出候選後依命中 token 數排序，確保最相關商品排第一。
