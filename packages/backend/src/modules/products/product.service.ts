@@ -303,47 +303,48 @@ export class ProductService {
     // Tokenize the query: split into letters+numbers runs and Chinese character runs
     const rawTokens = query.match(/[a-zA-Z0-9]+|[\u4e00-\u9fa5]+/g) || [];
 
-    // Expand tokens with brand synonyms
-    const expandedTokens: string[] = [];
+    // Group tokens with their brand synonyms. Each group represents one concept.
+    const tokenGroups: string[][] = [];
     for (const t of rawTokens) {
-      expandedTokens.push(t);
+      if (/^[a-zA-Z]$/.test(t)) continue; // skip single English letters
+      if (t.length < 2 && /^[0-9]$/.test(t)) continue; // skip single digits
+
+      const group = [t];
       for (const [cn, enList] of Object.entries(brandSynonyms)) {
-        if (t.includes(cn)) enList.forEach(en => expandedTokens.push(en));
-        if (t.toLowerCase() === cn || enList.includes(t.toLowerCase())) {
-          // already covered
+        if (t.includes(cn) || t.toLowerCase() === cn || enList.includes(t.toLowerCase())) {
+          group.push(cn, ...enList);
         }
       }
+      tokenGroups.push([...new Set(group)]); // ensure unique
     }
 
-    // Filter out single-char noise tokens that cause false positives (e.g. pure "U", "A")
-    const meaningfulTokens = expandedTokens.filter(t => {
-      if (/^[a-zA-Z]$/.test(t)) return false; // skip single English letters
-      if (t.length < 2 && /^[0-9]$/.test(t)) return false; // skip single digits
-      return true;
-    });
+    if (tokenGroups.length === 0) return [];
 
-    if (meaningfulTokens.length === 0) return [];
-
-    // Use OR strategy: build one big OR filter across all tokens and all columns
-    // This is looser than AND but prevents zero results when tokens span two languages
-    const orClauses = meaningfulTokens
-      .map(t => `name.ilike.%${t}%,categories.ilike.%${t}%,tags.ilike.%${t}%,phone_models.ilike.%${t}%`)
-      .join(',');
-
-    const { data } = await db
+    // Use "AND of ORs" strategy: Every token concept MUST match.
+    // e.g. "小米17" -> (name has '小米' OR 'xiaomi') AND (name has '17')
+    // This perfectly narrows down exact models while handling multilingal synonyms.
+    let req = db
       .from('product_index')
       .select('name, price, url, categories, phone_models')
       .eq('tenant_id', tenantId)
-      .eq('status', 'active')
-      .or(orClauses)
-      .limit(limit * 3); // fetch more then re-rank
+      .eq('status', 'active');
+
+    for (const group of tokenGroups) {
+      const orClauses = group
+        .map(t => `name.ilike.%${t}%,categories.ilike.%${t}%,tags.ilike.%${t}%,phone_models.ilike.%${t}%`)
+        .join(',');
+      req = req.or(orClauses);
+    }
+
+    const { data } = await req.limit(limit * 2); // fetch slightly more to re-rank the best name match
 
     if (!data || data.length === 0) return [];
 
-    // Re-rank: score by how many tokens each result matches
+    // Re-rank: prioritize items where the tokens match earlier in the name or match more specifically
     const scored = data.map(row => {
       const haystack = `${row.name} ${row.categories} ${row.phone_models}`.toLowerCase();
-      const score = meaningfulTokens.filter(t => haystack.includes(t.toLowerCase())).length;
+      // Since all token groups MUST match (guaranteed by DB), we score slightly higher for exact original token matches
+      const score = rawTokens.filter(t => haystack.includes(t.toLowerCase())).length;
       return { ...row, score };
     });
     scored.sort((a, b) => b.score - a.score);
