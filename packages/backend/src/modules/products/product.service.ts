@@ -285,52 +285,76 @@ export class ProductService {
     categories: string;
     phone_models: string;
   }>> {
-    const db = getSupabaseAdmin();
-
-    // --- Chinese → English brand synonym expansion ---
-    const brandSynonyms: Record<string, string[]> = {
-      '小米': ['xiaomi', 'mi', 'redmi'],
+    // ─── Step 1: Chinese → English brand synonym table ───────────────────────────
+    const BRAND_MAP: Record<string, string[]> = {
+      '小米': ['xiaomi', 'redmi'],
       '紅米': ['redmi', 'xiaomi'],
-      '蘋果': ['apple', 'iphone', 'ipad'],
+      '蘋果': ['apple', 'iphone'],
       '三星': ['samsung', 'galaxy'],
       '華為': ['huawei'],
-      '華碩': ['asus', 'zenfone', 'rog'],
+      '華碩': ['asus', 'rog'],
       '索尼': ['sony', 'xperia'],
       '谷歌': ['google', 'pixel'],
-      'u': ['ultra'],
-      'pm': ['pro max', 'promax'],
     };
 
+    // Short suffix alias: "u" → Ultra, "pm" → Pro Max
+    const ALIAS_MAP: Record<string, string[]> = {
+      u: ['ultra'],
+      pm: ['pro max'],
+    };
 
-    // Pre-process: split letters from numbers to ensure exact matching (e.g. "17PRO" -> "17 PRO", "S24Ultra" -> "S24 Ultra", "iphone16" -> "iphone 16")
-    const spacedQuery = query
-      .replace(/(\d)([a-zA-Z]+)/g, '$1 $2') // split Letters after Numbers (17PRO -> 17 PRO, 17U -> 17 U, S24Ultra -> S24 Ultra)
-      .replace(/(iphone|ipad|galaxy|pixel|pad)(\d)/gi, '$1 $2'); // split known Brands before Numbers (iphone16 -> iphone 16)
+    // ─── Step 2: Normalise / smart-split the raw query ────────────────────────
+    let s = query.toLowerCase();
 
-    // Tokenize the query: split into letters+numbers runs and Chinese character runs
-    const rawTokens = spacedQuery.match(/[a-zA-Z0-9]+|[\u4e00-\u9fa5]+/g) || [];
+    // 2a. Expand "promax" before any other splits so it becomes two tokens
+    s = s.replace(/\bpromax\b/g, 'pro max');
 
+    // 2b. Split known suffixes that are directly glued to a digit
+    //     sorted longest-first to avoid "pro max" matching as just "pro"
+    const DIGIT_SUFFIXES = ['promax', 'ultra', 'plus', 'mini', 'pro', 'max', 'pm'];
+    for (const suffix of DIGIT_SUFFIXES) {
+      s = s.replace(new RegExp(`(\\d)(${suffix})`, 'g'), `$1 $2`);
+    }
 
-    // Group tokens with their brand synonyms. Each group represents one concept.
+    // 2c. Split U/u that is glued to a digit (e.g. "17U" → "17 u")
+    s = s.replace(/(\d)(u)\b/g, '$1 $2');
+
+    // 2d. Split known brand names glued before digits (e.g. "iphone16" → "iphone 16")
+    s = s.replace(/(iphone|ipad|galaxy|pixel|pad)(\d)/g, '$1 $2');
+
+    // ─── Step 3: Tokenize ─────────────────────────────────────────────────────
+    const rawTokens = s.match(/[a-zA-Z0-9]+|[\u4e00-\u9fa5]+/g) || [];
+
+    // ─── Step 4: Build token groups (one group = one search constraint) ────────
+    const KEEP_SINGLES = new Set(Object.keys(ALIAS_MAP)); // 'u', 'pm'
     const tokenGroups: string[][] = [];
-    for (const t of rawTokens) {
-      if (/^[a-zA-Z]$/.test(t) && t.toLowerCase() !== 'u') continue; // skip single English letters except 'u' (Ultra)
-      if (t.length < 2 && /^[0-9]$/.test(t)) continue; // skip single digits
 
-      const group = [t];
-      for (const [cn, enList] of Object.entries(brandSynonyms)) {
-        if (t.includes(cn) || t.toLowerCase() === cn || enList.includes(t.toLowerCase())) {
-          group.push(cn, ...enList);
+    for (const t of rawTokens) {
+      // Skip pure noise: single letter (unless it's an alias key) or single digit
+      if (t.length === 1 && /[a-zA-Z]/.test(t) && !KEEP_SINGLES.has(t)) continue;
+      if (t.length === 1 && /[0-9]/.test(t)) continue;
+
+      const group = new Set<string>([t]);
+
+      // Expand alias ('u' → 'ultra', 'pm' → 'pro max')
+      if (ALIAS_MAP[t]) ALIAS_MAP[t].forEach(a => group.add(a));
+
+      // Expand brand synonyms
+      for (const [cn, enList] of Object.entries(BRAND_MAP)) {
+        const enLower = enList.map(e => e.toLowerCase());
+        if (t.includes(cn) || t === cn || enLower.includes(t)) {
+          group.add(cn);
+          enList.forEach(e => group.add(e));
         }
       }
-      tokenGroups.push([...new Set(group)]); // ensure unique
+
+      tokenGroups.push([...group]);
     }
 
     if (tokenGroups.length === 0) return [];
 
-    // Use "AND of ORs" strategy: Every token concept MUST match.
-    // e.g. "小米17" -> (name has '小米' OR 'xiaomi') AND (name has '17')
-    // This perfectly narrows down exact models while handling multilingal synonyms.
+    // ─── Step 5: AND-of-ORs Supabase query ────────────────────────────────────
+    const db = getSupabaseAdmin();
     let req = db
       .from('product_index')
       .select('name, price, url, categories, phone_models')
@@ -344,17 +368,18 @@ export class ProductService {
       req = req.or(orClauses);
     }
 
-    const { data } = await req.limit(limit * 2); // fetch slightly more to re-rank the best name match
-
+    const { data } = await req.limit(limit * 2);
     if (!data || data.length === 0) return [];
 
-    // Re-rank: prioritize items where the tokens match earlier in the name or match more specifically
-    const scored = data.map(row => {
-      const haystack = `${row.name} ${row.categories} ${row.phone_models}`.toLowerCase();
-      // Since all token groups MUST match (guaranteed by DB), we score slightly higher for exact original token matches
-      const score = rawTokens.filter(t => haystack.includes(t.toLowerCase())).length;
-      return { ...row, score };
-    });
+    // ─── Step 6: Re-rank by how many original raw tokens appear in result ──────
+    const scored: Array<{ name: string; price: string; url: string; categories: string; phone_models: string; score: number }> = data.map(row => ({
+      name: row.name as string,
+      price: row.price as string,
+      url: row.url as string,
+      categories: row.categories as string,
+      phone_models: row.phone_models as string,
+      score: rawTokens.filter(t => `${row.name} ${row.categories} ${row.phone_models}`.toLowerCase().includes(t)).length,
+    }));
     scored.sort((a, b) => b.score - a.score);
 
     return scored.slice(0, limit);
