@@ -2,6 +2,14 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
+## [v0.5.1] - 2026-03-31
+### 🐛 修正：產品搜尋引擎升級 & AI 連結格式修正
+- **根本問題**：客戶輸入「小米17U」或「ROG7 Ultimate」時，`searchProducts()` 因使用嚴格 AND 策略（每個 token 都必須命中），且無中英文品牌同義詞轉換，導致搜尋回傳空白，AI 被迫改用知識庫裡的通用搜尋頁 URL 作答。
+- **搜尋引擎升級**：`searchProducts()` 重寫為「中英同義詞展開 + OR 策略 + Token 過濾 + 相關度重排」：輸入「小米」自動展開為 `xiaomi`、`mi`、`redmi` 同時比對；過濾掉 "U"、"A" 等無意義單字母 token；由 OR 撈出候選後依命中 token 數排序，確保最相關商品排第一。
+- **ROG 品牌偵測**：`isProductQueryIntent()` 新增 `/rog\s*\d*/i` 正規匹配，正確識別「ROG7」、「ROG Phone」等型號。
+- **雙括號 URL 修正**：知識庫 RAG 注入 AI 時，新增「勿直接複製格式，URL 必須以純文字引用，不得輸出 `[[url]]` 雙括號格式」的明確提示，解決截圖中的 `[[https://...]]` 輸出問題。
+- **AI 連結規則強化**：`formatProductsAsAiContext()` 明確要求 AI 必須以純文字 URL 回覆、不得叫客戶自行搜尋、找到商品就必須附連結。
+
 ## [v0.5.0] - 2026-03-30
 ### 🐛 Hotfix
 - **訂單查詢「查無訂單」根本修復**：移除 `woocommerce.service.ts` 中強制將 `WOO_BASE_URL` 加上 `www.` 前綴的正則替換邏輯（原在 v0.3.0 引入以穿透 Hostinger 防火牆）。此邏輯會將 `https://ppbears.com` 改成 `https://www.ppbears.com`，卻導致 WooCommerce REST API 的訂單查詢持續失敗（回傳 null），使 AI 客服誤回「查無訂單」。修正後直接使用設定中的 URL（僅去除尾端斜線），訂單查詢恢復正常。

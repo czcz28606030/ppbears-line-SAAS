@@ -276,7 +276,7 @@ export class ProductService {
 
   /**
    * Search products in the local index by keyword (phone model, category, name).
-   * Uses tokenized search to match variations like "小米17U" against "Xiaomi 17 Ultra".
+   * Uses tokenized search with brand synonym expansion and OR-based scoring.
    */
   async searchProducts(tenantId: string, query: string, limit = 3): Promise<Array<{
     name: string;
@@ -287,27 +287,68 @@ export class ProductService {
   }>> {
     const db = getSupabaseAdmin();
 
-    // Tokenize the query: split into letters, numbers, and Chinese characters.
-    // e.g. "小米17U" -> ["小米", "17", "U"]
-    const tokens = query.match(/[a-zA-Z]+|[0-9]+|[\u4e00-\u9fa5]+/g);
-    if (!tokens || tokens.length === 0) return [];
+    // --- Chinese → English brand synonym expansion ---
+    const brandSynonyms: Record<string, string[]> = {
+      '小米': ['xiaomi', 'mi', 'redmi'],
+      '紅米': ['redmi', 'xiaomi'],
+      '蘋果': ['apple', 'iphone', 'ipad'],
+      '三星': ['samsung', 'galaxy'],
+      '華為': ['huawei'],
+      '華碩': ['asus', 'zenfone', 'rog'],
+      '索尼': ['sony', 'xperia'],
+      '谷歌': ['google', 'pixel'],
+    };
 
-    let dbQuery = db
+
+    // Tokenize the query: split into letters+numbers runs and Chinese character runs
+    const rawTokens = query.match(/[a-zA-Z0-9]+|[\u4e00-\u9fa5]+/g) || [];
+
+    // Expand tokens with brand synonyms
+    const expandedTokens: string[] = [];
+    for (const t of rawTokens) {
+      expandedTokens.push(t);
+      for (const [cn, enList] of Object.entries(brandSynonyms)) {
+        if (t.includes(cn)) enList.forEach(en => expandedTokens.push(en));
+        if (t.toLowerCase() === cn || enList.includes(t.toLowerCase())) {
+          // already covered
+        }
+      }
+    }
+
+    // Filter out single-char noise tokens that cause false positives (e.g. pure "U", "A")
+    const meaningfulTokens = expandedTokens.filter(t => {
+      if (/^[a-zA-Z]$/.test(t)) return false; // skip single English letters
+      if (t.length < 2 && /^[0-9]$/.test(t)) return false; // skip single digits
+      return true;
+    });
+
+    if (meaningfulTokens.length === 0) return [];
+
+    // Use OR strategy: build one big OR filter across all tokens and all columns
+    // This is looser than AND but prevents zero results when tokens span two languages
+    const orClauses = meaningfulTokens
+      .map(t => `name.ilike.%${t}%,categories.ilike.%${t}%,tags.ilike.%${t}%,phone_models.ilike.%${t}%`)
+      .join(',');
+
+    const { data } = await db
       .from('product_index')
       .select('name, price, url, categories, phone_models')
       .eq('tenant_id', tenantId)
-      .eq('status', 'active');
+      .eq('status', 'active')
+      .or(orClauses)
+      .limit(limit * 3); // fetch more then re-rank
 
-    // Every token must match *somewhere* (name OR categories OR tags OR phone_models)
-    for (const token of tokens) {
-      dbQuery = dbQuery.or(`name.ilike.%${token}%,categories.ilike.%${token}%,tags.ilike.%${token}%,phone_models.ilike.%${token}%`);
-    }
+    if (!data || data.length === 0) return [];
 
-    const { data } = await dbQuery.limit(limit);
+    // Re-rank: score by how many tokens each result matches
+    const scored = data.map(row => {
+      const haystack = `${row.name} ${row.categories} ${row.phone_models}`.toLowerCase();
+      const score = meaningfulTokens.filter(t => haystack.includes(t.toLowerCase())).length;
+      return { ...row, score };
+    });
+    scored.sort((a, b) => b.score - a.score);
 
-    // Filter out "U" token matches that just caught a random English word if other tokens were short,
-    // but the Supabase query will handle it mostly fine.
-    return data || [];
+    return scored.slice(0, limit);
   }
 
   /**
@@ -331,10 +372,12 @@ export class ProductService {
       /pixel\s*\d/i,
       /\b\d{1,2}\s*(pro|plus|ultra|max|mini|u)\b/i,  // e.g. "17 PRO", "15 Plus", "17U"
       /xiaomi|oppo|vivo|realme|huawei|sony|lg|htc|asus|nokia/i,
+      /rog\s*\d*\s*(phone|ultimate|pro)?/i,  // ROG7, ROG Phone, ROG7 Ultimate
       /蘋果|三星|小米|紅米|華為|華碩|索尼|谷歌/i,
     ];
     return modelPatterns.some(p => p.test(text));
   }
+
 
   /**
    * Extract the most useful search keyword from a customer message.
@@ -368,9 +411,9 @@ export class ProductService {
   formatProductsAsAiContext(products: Array<{ name: string; price: string; url: string; categories: string }>): string {
     if (!products.length) return '';
     const lines = products.map((p, i) =>
-      `[${i + 1}] 商品名稱: ${p.name} | 價格: NT$${p.price} | 分類: ${p.categories} | 連結: ${p.url}`
+      `[${i + 1}] 商品名稱: ${p.name} | 價格: NT$${p.price} | 分類: ${p.categories} | 購買連結: ${p.url}`
     );
-    return `\n\n以下是從最新產品索引中找到的相符商品（請優先使用這些資料回答，連結請完整引用）：\n${lines.join('\n')}`;
+    return `\n\n[產品索引搜尋結果 - 以下資料必須優先使用]\n${lines.join('\n')}\n[回覆規則] 1. 必須直接將購買連結以純文字 URL 格式完整回覆給客戶（例如：https://ppbears.com/...），不得使用 Markdown 的 [[url]] 雙括號格式。2. 不得叫客戶「自行搜尋」或「自行上網查找」。3. 若有找到相符產品，必定要附上連結。`;
   }
 }
 

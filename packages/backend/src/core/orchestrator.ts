@@ -218,7 +218,7 @@ export class Orchestrator {
       // --- Phase 2: Knowledge base RAG context enrichment ---
       const kbChunks = await knowledgeBaseService.retrieveContext(tenantId, mergedContent, 3);
       const kbContext = kbChunks.length > 0
-        ? `\n\n以下是從知識庫擷取的相關參考資料：\n${kbChunks.map((c, i) => `[${i + 1}] ${c}`).join('\n')}`
+        ? `\n\n[知識庫參考資料 - 僅供參考，勿直接複製格式]\n${kbChunks.map((c, i) => `[${i + 1}] ${c}`).join('\n')}\n[注意] 若上述參考資料中含有 URL 連結，請以純文字格式引用，不得輸出 [[url]] 或雙括號巢狀格式。`
         : '';
 
       // --- Load AI Strict Rules (highest priority — injected ABOVE system prompt) ---
