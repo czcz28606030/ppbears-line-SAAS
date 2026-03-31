@@ -404,7 +404,7 @@ export class ProductService {
   formatProducts(products: Array<{ name: string; price: string; url: string; categories: string }>): string {
     if (!products.length) return '目前沒有找到相符的產品，請輸入「真人」詢問客服人員。';
     const lines = products.map((p, i) =>
-      `${i + 1}. ${p.name}\n   💰 NT$${p.price}\n   🔗 ${p.url}`
+      `${i + 1}. ${p.name}\n   🔗 ${p.url}`
     );
     return `🐻 以下是為您找到的相關產品：\n\n${lines.join('\n\n')}`;
   }
@@ -416,9 +416,9 @@ export class ProductService {
   formatProductsAsAiContext(products: Array<{ name: string; price: string; url: string; categories: string }>): string {
     if (!products.length) return '';
     const lines = products.map((p, i) =>
-      `[${i + 1}] 商品名稱: ${p.name} | 價格: NT$${p.price} | 分類: ${p.categories} | 購買連結: ${p.url}`
+      `[${i + 1}] 商品名稱: ${p.name} | 分類: ${p.categories} | 購買連結: ${p.url}`
     );
-    return `\n\n[產品索引搜尋結果 - 以下資料必須優先使用]\n${lines.join('\n')}\n[回覆規則] 1. 必須直接將購買連結以純文字 URL 格式完整回覆給客戶（例如：https://ppbears.com/...），不得使用 Markdown 的 [[url]] 雙括號格式。2. 不得叫客戶「自行搜尋」或「自行上網查找」。3. 若有找到相符產品，必定要附上連結。`;
+    return `\n\n[產品索引搜尋結果 - 以下資料必須優先使用]\n${lines.join('\n')}\n[回覆規則] 1. 必須直接將購買連結以純文字 URL 格式完整回覆給客戶（例如：https://ppbears.com/...），不得使用 Markdown 的 [[url]] 雙括號格式。2. 不得叫客戶「自行搜尋」或「自行上網查找」。3. 若有找到相符產品，必定要附上連結。4. 絕對不可在回覆中列出商品價格或主動報價。`;
   }
 }
 
