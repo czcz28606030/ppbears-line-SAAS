@@ -297,11 +297,15 @@ export class ProductService {
       '華碩': ['asus', 'zenfone', 'rog'],
       '索尼': ['sony', 'xperia'],
       '谷歌': ['google', 'pixel'],
+      'u': ['ultra'],
+      'pm': ['pro max', 'promax'],
     };
 
 
-    // Pre-process: insert spaces around common english letters so things like "17PRO" or "S24Ultra" are correctly split
-    const spacedQuery = query.replace(/(iphone|ipad|galaxy|pixel|pro|max|plus|ultra|mini|pm|pad)/gi, ' $1 ');
+    // Pre-process: split letters from numbers to ensure exact matching (e.g. "17PRO" -> "17 PRO", "S24Ultra" -> "S24 Ultra", "iphone16" -> "iphone 16")
+    const spacedQuery = query
+      .replace(/(\d)([a-zA-Z]+)/g, '$1 $2') // split Letters after Numbers (17PRO -> 17 PRO, 17U -> 17 U, S24Ultra -> S24 Ultra)
+      .replace(/(iphone|ipad|galaxy|pixel|pad)(\d)/gi, '$1 $2'); // split known Brands before Numbers (iphone16 -> iphone 16)
 
     // Tokenize the query: split into letters+numbers runs and Chinese character runs
     const rawTokens = spacedQuery.match(/[a-zA-Z0-9]+|[\u4e00-\u9fa5]+/g) || [];
@@ -310,7 +314,7 @@ export class ProductService {
     // Group tokens with their brand synonyms. Each group represents one concept.
     const tokenGroups: string[][] = [];
     for (const t of rawTokens) {
-      if (/^[a-zA-Z]$/.test(t)) continue; // skip single English letters
+      if (/^[a-zA-Z]$/.test(t) && t.toLowerCase() !== 'u') continue; // skip single English letters except 'u' (Ultra)
       if (t.length < 2 && /^[0-9]$/.test(t)) continue; // skip single digits
 
       const group = [t];
