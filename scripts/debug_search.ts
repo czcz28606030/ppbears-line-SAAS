@@ -1,10 +1,16 @@
-import dotenv from 'dotenv';
-dotenv.config({ path: 'packages/backend/.env' });
-import { productService } from './packages/backend/src/modules/products/product.service';
+const queries = [
+  "17PRO",
+  "S24Ultra",
+  "16PM",
+  "A55",
+  "iphone16",
+  "iphone 16 pro max",
+  "ROG7",
+  "小米17"
+];
 
-async function run() {
-  const res = await productService.searchProducts('f3a9e1e9-4670-4966-adc6-ea78d46e27ab', '小米17', 5);
-  console.log("Search results for 小米17:", JSON.stringify(res, null, 2));
+for (let q of queries) {
+  let mod = q.replace(/(iphone|ipad|galaxy|pixel|pro|max|plus|ultra|mini|pm)/gi, ' $1 ');
+  let tokens = mod.match(/[a-zA-Z0-9]+|[\u4e00-\u9fa5]+/g) || [];
+  console.log(`${q} -> ${mod} ->`, tokens);
 }
-
-run().catch(console.error);

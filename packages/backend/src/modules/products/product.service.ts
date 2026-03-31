@@ -300,8 +300,12 @@ export class ProductService {
     };
 
 
+    // Pre-process: insert spaces around common english letters so things like "17PRO" or "S24Ultra" are correctly split
+    const spacedQuery = query.replace(/(iphone|ipad|galaxy|pixel|pro|max|plus|ultra|mini|pm|pad)/gi, ' $1 ');
+
     // Tokenize the query: split into letters+numbers runs and Chinese character runs
-    const rawTokens = query.match(/[a-zA-Z0-9]+|[\u4e00-\u9fa5]+/g) || [];
+    const rawTokens = spacedQuery.match(/[a-zA-Z0-9]+|[\u4e00-\u9fa5]+/g) || [];
+
 
     // Group tokens with their brand synonyms. Each group represents one concept.
     const tokenGroups: string[][] = [];
