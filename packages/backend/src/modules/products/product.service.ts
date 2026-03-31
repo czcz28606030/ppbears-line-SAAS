@@ -404,7 +404,7 @@ export class ProductService {
       /\bipad\b/i,
       /galaxy\s*(s|a|z)\d/i,
       /pixel\s*\d/i,
-      /\b\d{1,2}\s*(pro|plus|ultra|max|mini|u)\b/i,  // e.g. "17 PRO", "15 Plus", "17U"
+      /\b\d{1,2}\s*(promax|pro|plus|ultra|max|mini|u|pm)\b/i,  // e.g. "17 PRO", "15 Plus", "17U", "17PROMAX"
       /xiaomi|oppo|vivo|realme|huawei|sony|lg|htc|asus|nokia/i,
       /rog\s*\d*\s*(phone|ultimate|pro)?/i,  // ROG7, ROG Phone, ROG7 Ultimate
       /蘋果|三星|小米|紅米|華為|華碩|索尼|谷歌/i,
