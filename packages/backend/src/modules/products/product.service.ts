@@ -398,18 +398,41 @@ export class ProductService {
     ];
     if (intentKeywords.some(kw => text.includes(kw))) return true;
 
-    // Also detect bare phone model mentions (e.g. "17 PRO", "iPhone 16 Plus", "S25 Ultra")
+    // Detect broad brand mentions or phone model characteristics
     const modelPatterns = [
-      /iphone\s*\d/i,
-      /\bipad\b/i,
-      /galaxy\s*(s|a|z)\d/i,
-      /pixel\s*\d/i,
-      /\b\d{1,2}\s*(promax|pro|plus|ultra|max|mini|u|pm)\b/i,  // e.g. "17 PRO", "15 Plus", "17U", "17PROMAX"
-      /xiaomi|oppo|vivo|realme|huawei|sony|lg|htc|asus|nokia/i,
-      /rog\s*\d*\s*(phone|ultimate|pro)?/i,  // ROG7, ROG Phone, ROG7 Ultimate
+      // 1. Broad Prominent Brands
+      /apple|iphone|ipad/i,
+      /samsung|galaxy/i,
+      /xiaomi|mi\s*\d|redmi|poco/i,
+      /oppo|reno|find/i, 
+      /vivo|iqoo/i,
+      /realme/i,
+      /huawei|mate|p\d{2}|nova/i,
+      /asus|zenfone|rog/i,
+      /sony|xperia/i,
+      /google|pixel/i,
+      /motorola|moto/i,
+      /sharp|aquos/i,
+      /nothing\s*phone/i,
       /蘋果|三星|小米|紅米|華為|華碩|索尼|谷歌/i,
+      
+      // 2. Generalized model pattern A: 1-4 letters + numbers (e.g. Reno 12, X100, V30, A55)
+      // Enforce word boundaries to avoid accidentally matching normal English words
+      /\b[a-zA-Z]{1,4}\s*\d{1,3}(pro|plus|ultra|max|mini)?\b/i,
+      
+      // 3. Generalized model pattern B: numbers + letters (e.g. 17 Pro, 16PM, 15 Plus)
+      /\b\d{1,2}\s*[a-zA-Z]{1,10}\b/i,
     ];
-    return modelPatterns.some(p => p.test(text));
+    
+    if (modelPatterns.some(p => p.test(text))) return true;
+
+    // 4. Fallback for extremely short naked digit queries (e.g. "17", "S24", "16")
+    // If the string is short and has a number, there's a strong chance it's a naked model number
+    if (text.length <= 15 && /\d/.test(text)) {
+      return true;
+    }
+
+    return false;
   }
 
 
@@ -442,8 +465,43 @@ export class ProductService {
    * Format product results as structured context for injection into the LLM system prompt.
    * This allows the AI to craft a natural response citing real product data.
    */
-  formatProductsAsAiContext(products: Array<{ name: string; price: string; url: string; categories: string }>): string {
+  formatProductsAsAiContext(products: Array<{ name: string; price: string; url: string; categories: string; phone_models?: string; }>): string {
     if (!products.length) return '';
+
+    // Check for extreme brand ambiguity (e.g. user types "17" and gets iPhone 17 AND Xiaomi 17)
+    // If we identify products from multiple completely different brands, we inject an intercept prompt.
+    if (products.length > 1) {
+      const MAJOR_BRANDS = [
+        { id: 'apple', keywords: ['apple', 'iphone', 'ipad', '蘋果'] },
+        { id: 'samsung', keywords: ['samsung', 'galaxy', '三星'] },
+        { id: 'xiaomi', keywords: ['xiaomi', 'mi ', 'redmi', 'poco', '小米', '紅米'] },
+        { id: 'oppo', keywords: ['oppo', 'reno', 'find'] },
+        { id: 'vivo', keywords: ['vivo', 'iqoo'] },
+        { id: 'realme', keywords: ['realme'] },
+        { id: 'huawei', keywords: ['huawei', 'mate', 'nova', '華為'] },
+        { id: 'asus', keywords: ['asus', 'zenfone', 'rog', '華碩'] },
+        { id: 'sony', keywords: ['sony', 'xperia', '索尼'] },
+        { id: 'google', keywords: ['google', 'pixel', '谷歌'] },
+      ];
+
+      const foundBrands = new Set<string>();
+
+      for (const p of products) {
+        const haystack = `${p.name} ${p.categories} ${p.phone_models || ''}`.toLowerCase();
+        for (const brand of MAJOR_BRANDS) {
+          if (brand.keywords.some(k => haystack.includes(k))) {
+            foundBrands.add(brand.id);
+            break;
+          }
+        }
+      }
+
+      // If results span 2 or more distinct brands, ask for clarification.
+      if (foundBrands.size > 1) {
+        return `\n\n[系統警告] 客戶查詢的型號不足以辨識精確品牌（包含多廠牌款式符合）。請直接回覆客戶反問品牌，例如：「請問您是指 iPhone 的款式，還是小米或其他廠牌呢？請告訴我您的手機品牌，我馬上為您找連結！」絕對不要直接提供任何產品連結！`;
+      }
+    }
+
     const lines = products.map((p, i) =>
       `[${i + 1}] 商品名稱: ${p.name} | 分類: ${p.categories} | 購買連結: ${p.url}`
     );
