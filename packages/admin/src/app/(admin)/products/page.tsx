@@ -195,79 +195,125 @@ export default function ProductsPage() {
       <div className="topbar">
         <span className="topbar-title">📦 產品索引</span>
         <div className="topbar-right">
-          <button className="btn btn-ghost btn-sm" onClick={() => { fetchProducts(); fetchAllowlist(); fetchStagingCount(); }}><RefreshCw size={14} /></button>
-          {stagingCount > 0 && (
-            <button
-              className="btn btn-sm"
-              style={{ background: 'rgba(250,204,21,0.15)', color: '#f59e0b', border: '1px solid rgba(250,204,21,0.4)', fontWeight: 600 }}
-              onClick={applyStaging}
-              disabled={applying}
-            >
-              {applying ? '套用中...' : `⬆️ 套用暫存索引（${stagingCount} 筆）`}
-            </button>
-          )}
+          <button
+            className="btn btn-ghost btn-sm"
+            title="刷新"
+            onClick={() => { fetchProducts(); fetchAllowlist(); fetchStagingCount(); }}
+          >
+            <RefreshCw size={14} />
+          </button>
           <div className="topbar-avatar">A</div>
         </div>
       </div>
 
       <div className="page-content">
-        {/* Apply result banner */}
-        {applyResult && (
-          <div style={{
-            background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)',
-            borderRadius: 8, padding: '10px 16px', marginBottom: 16,
-            display: 'flex', alignItems: 'center', gap: 10
-          }}>
-            <span style={{ fontSize: 18 }}>🚀</span>
-            <span style={{ fontWeight: 600, color: '#22c55e' }}>
-              套用完成！正式索引已更新為 <strong>{applyResult.promoted}</strong> 個商品
-            </span>
-            <span className="text-xs text-muted" style={{ marginLeft: 'auto' }}>{applyResult.time}</span>
+
+        {/* ─────────────────────────────────────────────────────────────────── */}
+        {/* 索引狀態卡片 */}
+        {/* ─────────────────────────────────────────────────────────────────── */}
+        <div className="card" style={{ marginBottom: 'var(--space-lg)' }}>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Package size={16} /> 產品索引狀態
           </div>
-        )}
-        {/* Staging waiting banner */}
-        {stagingCount > 0 && !applyResult && (
-          <div style={{
-            background: 'rgba(250,204,21,0.08)', border: '1px solid rgba(250,204,21,0.35)',
-            borderRadius: 8, padding: '12px 16px', marginBottom: 16,
-            display: 'flex', alignItems: 'center', gap: 12
-          }}>
-            <span style={{ fontSize: 20 }}>📥</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, color: '#f59e0b' }}>暫存索引就緒：{stagingCount} 筆商品等待上線</div>
-              <div className="text-xs text-muted" style={{ marginTop: 2 }}>點選右上角「套用暫存索引」按鈕，將本機同步的資料正式上線。目前正式索引有 {activeCount} 筆。</div>
+
+          {/* 數字框 */}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            {/* 正式索引 */}
+            <div style={{
+              flex: 1, minWidth: 160,
+              background: activeCount > 0 ? 'rgba(34,197,94,0.08)' : 'rgba(100,116,139,0.08)',
+              border: `1px solid ${activeCount > 0 ? 'rgba(34,197,94,0.25)' : 'rgba(100,116,139,0.2)'}`,
+              borderRadius: 10, padding: '14px 18px'
+            }}>
+              <div style={{ fontSize: 28, fontWeight: 700, color: activeCount > 0 ? '#22c55e' : 'var(--text-muted)' }}>
+                {loading ? '—' : activeCount.toLocaleString()}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>✅ 正式索引中的商品</div>
             </div>
-            <button
-              className="btn btn-sm"
-              style={{ background: 'rgba(250,204,21,0.2)', color: '#f59e0b', border: '1px solid rgba(250,204,21,0.4)', fontWeight: 600, whiteSpace: 'nowrap' }}
-              onClick={applyStaging} disabled={applying}
-            >
-              {applying ? '套用中...' : '套用暫存索引'}
-            </button>
+
+            {/* 暫存區 */}
+            <div style={{
+              flex: 1, minWidth: 160,
+              background: stagingCount > 0 ? 'rgba(250,204,21,0.08)' : 'rgba(100,116,139,0.06)',
+              border: `1px solid ${stagingCount > 0 ? 'rgba(250,204,21,0.35)' : 'rgba(100,116,139,0.15)'}`,
+              borderRadius: 10, padding: '14px 18px'
+            }}>
+              <div style={{ fontSize: 28, fontWeight: 700, color: stagingCount > 0 ? '#f59e0b' : 'var(--text-muted)' }}>
+                {loading ? '—' : stagingCount.toLocaleString()}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>📥 暫存區（待套用）</div>
+            </div>
+
+            {/* 暫存套用按鈕 */}
+            {stagingCount > 0 && (
+              <div style={{
+                flex: 1, minWidth: 160,
+                background: 'rgba(250,204,21,0.12)',
+                border: '1px solid rgba(250,204,21,0.4)',
+                borderRadius: 10, padding: '14px 18px',
+                display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6
+              }}>
+                <div style={{ fontSize: 12, color: '#f59e0b', fontWeight: 600 }}>暫存區有新資料！</div>
+                <button
+                  className="btn btn-sm"
+                  style={{ background: '#f59e0b', color: '#000', fontWeight: 700, border: 'none', borderRadius: 6 }}
+                  onClick={applyStaging}
+                  disabled={applying}
+                >
+                  {applying ? '套用中...' : `⬆️ 套用暫存索引 (${stagingCount.toLocaleString()} 筆)`}
+                </button>
+              </div>
+            )}
           </div>
-        )}
-        {/* Sync result banner */}
+
+          {/* 如何同步說明 */}
+          <div style={{
+            background: 'rgba(96,165,250,0.06)', border: '1px solid rgba(96,165,250,0.2)',
+            borderRadius: 8, padding: '10px 14px',
+            fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.8
+          }}>
+            <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>💡 如何更新商品索引？</span><br />
+            <strong>步驟 1</strong>：雙擊專案內的「同步商品索引.bat」（等待約 10~15 分鐘）<br />
+            <strong>步驟 2</strong>：回到此頁面，黃色框出現後點「套用暫存索引」按鈕 → 商品立即上線。
+          </div>
+
+          {/* 成功 / 失敗 banner */}
+          {applyResult && (
+            <div style={{
+              marginTop: 12,
+              background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)',
+              borderRadius: 8, padding: '10px 14px',
+              display: 'flex', alignItems: 'center', gap: 10
+            }}>
+              <span>🚀</span>
+              <span style={{ fontWeight: 600, color: '#22c55e' }}>
+                套用完成！正式索引已更新為 <strong>{applyResult.promoted.toLocaleString()}</strong> 個商品
+              </span>
+              <span className="text-xs text-muted" style={{ marginLeft: 'auto' }}>{applyResult.time}</span>
+            </div>
+          )}
+        </div>
+        {/* ─────────────────────────────────────────────────────────────────── */}
+
+        {/* Old banners removed — replaced by status card above */}
         {syncResult && (
           <div style={{
             background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)',
             borderRadius: 8, padding: '10px 16px', marginBottom: 16,
             display: 'flex', alignItems: 'center', gap: 10
           }}>
-            <span style={{ fontSize: 18 }}>✅</span>
-            <span style={{ fontWeight: 600, color: '#22c55e' }}>
-              雲端同步完成！共索引 <strong>{syncResult.count}</strong> 個商品
-            </span>
+            <span>✅</span>
+            <span style={{ fontWeight: 600, color: '#22c55e' }}>雲端同步完成！共索引 <strong>{syncResult.count}</strong> 個商品</span>
             <span className="text-xs text-muted" style={{ marginLeft: 'auto' }}>{syncResult.time}</span>
           </div>
         )}
-        {/* Syncing indicator */}
         {syncing && (
           <div style={{
             background: 'rgba(96,165,250,0.1)', border: '1px solid rgba(96,165,250,0.3)',
             borderRadius: 8, padding: '10px 16px', marginBottom: 16,
             display: 'flex', alignItems: 'center', gap: 10
           }}>
-            <span style={{ fontSize: 18 }}>⏳</span>
+            <span>⏳</span>
             <span style={{ color: 'var(--status-info)' }}>正在從 WooCommerce 同步商品，請稍候...</span>
           </div>
         )}
