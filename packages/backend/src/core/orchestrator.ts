@@ -193,16 +193,49 @@ export class Orchestrator {
       let productAiContext = '';
       let isProductIntent = false;
 
-      if (productService.isProductQueryIntent(mergedContent)) {
+      // ── Confirmation-word inheritance ─────────────────────────────────────────
+      // If the customer sends a short confirmation ("是的", "確認", "ok", "對" …)
+      // after the AI asked "您是指 XXX 嗎？", we must re-run the product search
+      // using the PREVIOUS user product query so we can give them the actual link.
+      const CONFIRMATION_WORDS = [
+        '是', '對', '確認', '好', '是的', '對的', '沒錯', 'yes', 'ok', 'OK',
+        '正確', '是啊', '對啊', '嗯', '嗯嗯', '好的', '我要', '要',
+      ];
+      const looksLikeConfirmation = (text: string) => {
+        const clean = text.trim();
+        return clean.length <= 20 && CONFIRMATION_WORDS.some(w => clean.includes(w));
+      };
+
+      let effectiveSearch = mergedContent; // what we actually search for
+      let searchInherited = false;
+
+      if (!productService.isProductQueryIntent(mergedContent) && looksLikeConfirmation(mergedContent)) {
+        // Walk back through history to find the most recent user message that was a product query
+        const recentHistory = history.slice(0, -1); // exclude current message
+        const prevProductMsg = [...recentHistory].reverse().find(
+          m => m.role === 'user' && productService.isProductQueryIntent(m.content)
+        );
+        if (prevProductMsg) {
+          isProductIntent = true;
+          effectiveSearch = prevProductMsg.content;
+          searchInherited = true;
+          log.info({ tenantId, inherited: effectiveSearch }, 'Confirmation detected — inheriting previous product query');
+        }
+      }
+
+      if (!isProductIntent && productService.isProductQueryIntent(mergedContent)) {
         isProductIntent = true;
-        let rawSearch = mergedContent;
+      }
+
+      if (isProductIntent) {
+        let rawSearch = searchInherited ? effectiveSearch : mergedContent;
+
         // If the current message is very short (e.g., just "apple"), it might be a reply to a clarifying question.
         // We prepend the previous user message from history to provide full context (e.g., "17" + "apple").
-        if (mergedContent.length < 15) {
-          // history includes the current message at the end, so we slice it off before searching
+        if (!searchInherited && mergedContent.length < 15) {
           const prevUserMessage = [...history.slice(0, -1)].reverse().find(m => m.role === 'user');
           if (prevUserMessage) {
-            rawSearch = `${prevUserMessage.content} ${rawSearch}`;
+            rawSearch = `${prevUserMessage.content} ${mergedContent}`;
           }
         }
         
@@ -213,7 +246,6 @@ export class Orchestrator {
           log.info({ tenantId, searchKeyword, found: products.length }, 'Product search context injected into AI prompt');
 
           // Immediately tag the user with the phone model from the best matching product.
-          // We do NOT require a two-turn confirmation — the intent is clear enough.
           const bestProduct = products[0];
           const tagFromProduct = taggingService.extractTagFromProduct(
             bestProduct.phone_models || '',
