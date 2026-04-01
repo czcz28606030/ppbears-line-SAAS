@@ -440,14 +440,26 @@ export class ProductService {
    * Extract the most useful search keyword from a customer message.
    */
   extractSearchKeyword(text: string): string {
-    const fillers = [
-      '我想要', '我想', '幫我', '我要', '請問', '有沒有', '有嗎', '可以嗎',
-      '訂製', '訂做', '客製化', '客製', '客制', '手機殼', '殼', '款式', '推薦',
-      '購買', '想買', '要買', '的', '嗎', '呢', '喔', '耶',
+    // Known Chinese brand names to preserve
+    const CHINESE_BRANDS = [
+      '三星', '蘋果', '小米', '紅米', '華為', '華碩', '索尼', '谷歌',
+      '摩托羅拉', '諾基亞', '夏普', '歐珀', '維沃',
     ];
-    let kw = text;
-    for (const f of fillers) kw = kw.replace(new RegExp(f, 'g'), ' ');
-    return kw.replace(/\s+/g, ' ').trim() || text;
+
+    const parts: string[] = [];
+
+    // 1. Extract all English words and digit sequences (brand names, model numbers, suffixes)
+    const enAndDigit = text.match(/[a-zA-Z0-9]+/g) || [];
+    parts.push(...enAndDigit);
+
+    // 2. Extract known Chinese brand names
+    for (const brand of CHINESE_BRANDS) {
+      if (text.includes(brand)) parts.push(brand);
+    }
+
+    // If we found anything useful, return it; otherwise fall back to full text
+    const result = parts.join(' ').replace(/\s+/g, ' ').trim();
+    return result || text;
   }
 
   /**
