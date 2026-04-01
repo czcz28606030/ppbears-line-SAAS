@@ -170,19 +170,30 @@ export class ProductService {
             if (url.includes('/product-category/') || url.includes('/product_cat/')) {
               // ── Category URL: sync all products in this category ──────────
               const catSlug = this.extractSlugFromUrl(url);
-              if (!catSlug) { errors++; continue; }
+              if (!catSlug) {
+                log.warn({ tenantId, url }, 'Could not extract slug from category URL');
+                errors++;
+                continue;
+              }
 
               // Step 1: Resolve category slug → WooCommerce category ID
               const catApiUrl = `${creds.baseUrl}/wp-json/wc/v3/products/categories?slug=${encodeURIComponent(catSlug)}&consumer_key=${creds.consumerKey}&consumer_secret=${creds.consumerSecret}`;
-              const catRes = await wooRequest(catApiUrl);
-              if (!catRes.ok) { errors++; continue; }
+              log.info({ tenantId, url, catSlug, catApiUrl }, 'Resolving category by slug');
+              const catRes = await wooRequest(catApiUrl, { timeoutMs: 20_000 });
+              if (!catRes.ok) {
+                const errBody = await catRes.text().catch(() => '');
+                log.error({ tenantId, url, catSlug, status: catRes.status, body: errBody.slice(0, 200) }, 'Category API request failed');
+                errors++;
+                continue;
+              }
               const cats = await catRes.json() as Array<{ id: number; name: string }>;
               if (!Array.isArray(cats) || !cats.length) {
-                log.warn({ tenantId, url, catSlug }, 'Category not found by slug');
+                log.warn({ tenantId, url, catSlug }, 'Category not found by slug — check that this slug exists in WooCommerce');
                 errors++;
                 continue;
               }
               const categoryId = cats[0].id;
+              log.info({ tenantId, catSlug, categoryId, catName: cats[0].name }, 'Category resolved');
 
               // Step 2: Recursively collect ALL descendant category IDs
               const allCategoryIds = await this.getAllCategoryIds(
@@ -193,20 +204,37 @@ export class ProductService {
               // Step 3: For each category ID, paginate and sync all products
               for (const catId of allCategoryIds) {
                 let catPage = 1;
+                let pageErrors = 0;
                 while (true) {
                   const prodUrl = `${creds.baseUrl}/wp-json/wc/v3/products?category=${catId}&per_page=100&page=${catPage}&status=publish&consumer_key=${creds.consumerKey}&consumer_secret=${creds.consumerSecret}`;
-                  const prodRes = await wooRequest(prodUrl);
-                  if (!prodRes.ok) break;
+                  let prodRes;
+                  try {
+                    prodRes = await wooRequest(prodUrl, { timeoutMs: 30_000 });
+                  } catch (fetchErr: any) {
+                    log.error({ tenantId, catId, catPage, err: fetchErr.message }, 'Network error fetching category products page');
+                    pageErrors++;
+                    break;
+                  }
+                  if (!prodRes.ok) {
+                    const body = await prodRes.text().catch(() => '');
+                    log.error({ tenantId, catId, catPage, status: prodRes.status, body: body.slice(0, 200) }, 'Category products API failed');
+                    pageErrors++;
+                    break;
+                  }
                   const catProducts = await prodRes.json();
-                  // Guard: WooCommerce may return an error object instead of array on last page
                   if (!Array.isArray(catProducts) || !catProducts.length) break;
+                  log.info({ tenantId, catId, catPage, count: catProducts.length }, 'Syncing category product page');
                   for (const p of catProducts as WooProduct[]) {
-                    try { await upsertProduct(p); } catch (err: any) { errors++; }
+                    try { await upsertProduct(p); } catch (err: any) {
+                      log.error({ tenantId, productId: p.id, err: err.message }, 'Failed to upsert product');
+                      errors++;
+                    }
                   }
                   catPage++;
                 }
+                if (pageErrors > 0) errors += pageErrors;
               }
-              log.info({ tenantId, catSlug, categoryId, allCategoryIds: allCategoryIds.length }, 'Category (recursive) sync complete');
+              log.info({ tenantId, catSlug, categoryId, allCategoryIds: allCategoryIds.length, syncedSoFar: synced }, 'Category (recursive) sync complete');
 
             } else {
               // ── Product URL: sync single product by slug ──────────────────
