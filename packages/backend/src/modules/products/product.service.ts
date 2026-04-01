@@ -524,10 +524,22 @@ export class ProductService {
       }
     }
 
-    const lines = products.map((p, i) =>
-      `[${i + 1}] 商品名稱: ${p.name} | 分類: ${p.categories} | 購買連結: ${p.url}`
+    // Filter out products that have no URL — AI would hallucinate a placeholder if URL is empty
+    const validProducts = products.filter(p => p.url && p.url.startsWith('http'));
+    if (validProducts.length === 0) return '';
+
+    const lines = validProducts.map((p, i) =>
+      `商品${i + 1}:\n  名稱: ${p.name}\n  分類: ${p.categories}\n  購買連結: ${p.url}`
     );
-    return `\n\n[產品索引搜尋結果 - 以下資料必須優先使用]\n${lines.join('\n')}\n[回覆規則] 1. 必須直接將購買連結以純文字 URL 格式完整回覆給客戶（例如：https://ppbears.com/...），不得使用 Markdown 的 [[url]] 雙括號格式。2. 不得叫客戶「自行搜尋」或「自行上網查找」。3. 若有找到相符產品，必定要附上連結。4. 絕對不可在回覆中列出商品價格或主動報價。5. 每次提供連結時，必須親切反問確認（如：「這個連結是您要找的型號嗎？若不是請告訴我完整品牌與型號！」）。若客戶明確表示搜尋結果中「沒有」想要的型號，請主動建議客戶：「您可以輸入『真人』，我將為您轉接專員協助尋找唷！」`;
+    return `\n\n[產品索引搜尋結果 - 以下資料必須完整使用]\n${lines.join('\n')}\n` +
+      `[回覆規則]\n` +
+      `1. 必須直接將「購買連結」欄位的完整 URL 原文複製給客戶，絕對不可替換成「[產品索引查到的連結]」「[連結]」等任何佔位詞或縮寫詞。\n` +
+      `2. URL 必須以純文字格式輸出（例如：https://ppbears.com/...），不得使用 Markdown [text](url) 或 [[url]] 格式。\n` +
+      `3. 不得叫客戶「自行搜尋」或「自行上網查找」。\n` +
+      `4. 找到商品就必定要附上完整連結。\n` +
+      `5. 絕對不可在回覆中報價。\n` +
+      `6. 每次提供連結後，親切反問：「這個連結是您要找的型號嗎？若不是請告訴我完整品牌與型號！」\n` +
+      `若客戶明確表示找不到想要的型號，請建議：「您可以輸入『真人』，我將為您轉接專員協助尋找唷！」`;
   }
 }
 
