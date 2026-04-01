@@ -114,6 +114,20 @@ export class ProductService {
       return { synced: 0, errors: 0 };
     }
 
+    // Helper: sleep for ms milliseconds
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+    // Helper: wooRequest with 429 rate-limit retry
+    const wooFetch = async (url: string, timeoutMs = 30_000): Promise<Awaited<ReturnType<typeof wooRequest>>> => {
+      const res = await wooRequest(url, { timeoutMs });
+      if (res.status === 429) {
+        log.warn({ url }, 'Rate limited (429). Waiting 5s before retry...');
+        await sleep(5_000);
+        return wooRequest(url, { timeoutMs });
+      }
+      return res;
+    };
+
     const db = getSupabaseAdmin();
     let synced = 0;
     let errors = 0;
@@ -160,12 +174,17 @@ export class ProductService {
         log.info({ tenantId, count: allowlistUrls.length }, 'Starting allowlist-mode product sync');
 
         // Clear old index first so only allowlist products remain
-        const { count: deleted } = await db
-          .from('product_index')
-          .delete()
-          .eq('tenant_id', tenantId);
-        log.info({ tenantId, deleted }, 'Cleared existing product index for allowlist sync');
-        for (const url of allowlistUrls) {
+        await db.from('product_index').delete().eq('tenant_id', tenantId);
+
+        for (let urlIdx = 0; urlIdx < allowlistUrls.length; urlIdx++) {
+          const url = allowlistUrls[urlIdx];
+
+          // ── Rate-limit protection: pause between each URL ─────────────────
+          if (urlIdx > 0) {
+            log.info({ tenantId, urlIdx, url }, `Sleeping 1.5s between URLs to avoid rate limiting...`);
+            await sleep(1_500);
+          }
+
           try {
             if (url.includes('/product-category/') || url.includes('/product_cat/')) {
               // ── Category URL: sync all products in this category ──────────
@@ -178,17 +197,24 @@ export class ProductService {
 
               // Step 1: Resolve category slug → WooCommerce category ID
               const catApiUrl = `${creds.baseUrl}/wp-json/wc/v3/products/categories?slug=${encodeURIComponent(catSlug)}&consumer_key=${creds.consumerKey}&consumer_secret=${creds.consumerSecret}`;
-              log.info({ tenantId, url, catSlug, catApiUrl }, 'Resolving category by slug');
-              const catRes = await wooRequest(catApiUrl, { timeoutMs: 20_000 });
+              log.info({ tenantId, urlIdx: `${urlIdx + 1}/${allowlistUrls.length}`, catSlug }, 'Resolving category by slug');
+              let catRes;
+              try {
+                catRes = await wooFetch(catApiUrl, 20_000);
+              } catch (fetchErr: any) {
+                log.error({ tenantId, catSlug, err: fetchErr.message }, 'Network error fetching category');
+                errors++;
+                continue;
+              }
               if (!catRes.ok) {
                 const errBody = await catRes.text().catch(() => '');
-                log.error({ tenantId, url, catSlug, status: catRes.status, body: errBody.slice(0, 200) }, 'Category API request failed');
+                log.error({ tenantId, catSlug, status: catRes.status, body: errBody.slice(0, 200) }, 'Category API request failed');
                 errors++;
                 continue;
               }
               const cats = await catRes.json() as Array<{ id: number; name: string }>;
               if (!Array.isArray(cats) || !cats.length) {
-                log.warn({ tenantId, url, catSlug }, 'Category not found by slug — check that this slug exists in WooCommerce');
+                log.warn({ tenantId, catSlug }, 'Category not found by slug in WooCommerce');
                 errors++;
                 continue;
               }
@@ -204,21 +230,18 @@ export class ProductService {
               // Step 3: For each category ID, paginate and sync all products
               for (const catId of allCategoryIds) {
                 let catPage = 1;
-                let pageErrors = 0;
                 while (true) {
                   const prodUrl = `${creds.baseUrl}/wp-json/wc/v3/products?category=${catId}&per_page=100&page=${catPage}&status=publish&consumer_key=${creds.consumerKey}&consumer_secret=${creds.consumerSecret}`;
                   let prodRes;
                   try {
-                    prodRes = await wooRequest(prodUrl, { timeoutMs: 30_000 });
+                    prodRes = await wooFetch(prodUrl, 30_000);
                   } catch (fetchErr: any) {
-                    log.error({ tenantId, catId, catPage, err: fetchErr.message }, 'Network error fetching category products page');
-                    pageErrors++;
+                    log.error({ tenantId, catId, catPage, err: fetchErr.message }, 'Network error fetching category products');
                     break;
                   }
                   if (!prodRes.ok) {
                     const body = await prodRes.text().catch(() => '');
                     log.error({ tenantId, catId, catPage, status: prodRes.status, body: body.slice(0, 200) }, 'Category products API failed');
-                    pageErrors++;
                     break;
                   }
                   const catProducts = await prodRes.json();
@@ -231,10 +254,16 @@ export class ProductService {
                     }
                   }
                   catPage++;
+                  // ── 300ms pause between pages to respect rate limits ──────
+                  await sleep(300);
                 }
-                if (pageErrors > 0) errors += pageErrors;
               }
-              log.info({ tenantId, catSlug, categoryId, allCategoryIds: allCategoryIds.length, syncedSoFar: synced }, 'Category (recursive) sync complete');
+              log.info({ tenantId, catSlug, syncedSoFar: synced }, 'Category sync complete');
+
+              // Update progress in sync_jobs in real-time
+              if (job) {
+                await db.from('sync_jobs').update({ items_processed: synced }).eq('id', job.id);
+              }
 
             } else {
               // ── Product URL: sync single product by slug ──────────────────
@@ -242,7 +271,14 @@ export class ProductService {
               if (!slug) { errors++; continue; }
 
               const apiUrl = `${creds.baseUrl}/wp-json/wc/v3/products?slug=${encodeURIComponent(slug)}&consumer_key=${creds.consumerKey}&consumer_secret=${creds.consumerSecret}`;
-              const res = await wooRequest(apiUrl);
+              let res;
+              try {
+                res = await wooFetch(apiUrl, 20_000);
+              } catch (fetchErr: any) {
+                log.error({ tenantId, slug, err: fetchErr.message }, 'Network error fetching single product');
+                errors++;
+                continue;
+              }
               if (!res.ok) { errors++; continue; }
               const results = await res.json() as WooProduct[];
               if (results.length > 0) {
@@ -277,6 +313,7 @@ export class ProductService {
             }
           }
           page++;
+          await sleep(200); // small delay between full-sync pages too
         }
       }
 
