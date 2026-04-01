@@ -363,22 +363,68 @@ export class ProductService {
 
     if (tokenGroups.length === 0) return [];
 
-    // ─── Step 5: AND-of-ORs Supabase query ────────────────────────────────────
     const db = getSupabaseAdmin();
+
+    // ─── Step 5 (NEW): Anchor-based OR search ────────────────────────────────
+    // OLD approach: AND-of-ORs (every token group must match → too strict, fails on S24 vs S24U)
+    // NEW approach:
+    //   • "Anchor tokens" = tokens that contain digits (e.g. s24, 23, u23) — most specific
+    //   • "Brand tokens"  = brand synonym expansions (samsung, galaxy, iphone...)
+    //   • "Suffix tokens" = ultra, pro, pm, u — used only for scoring
+    //
+    // Query strategy:
+    //   1. If digit anchor exists: OR across all anchors + their aliases (find any S24 product)
+    //      AND if brand tokens exist: also AND that brand group (narrow to correct brand)
+    //   2. If no digit anchor: fall back to AND-of-ORs (pure brand/text query)
+    // This ensures "S24U" "S24 U" "S24 Ultra" all return the same Samsung S24 products,
+    // and ranking puts the most relevant product first.
+
+    // Identify anchor groups (contain a digit)
+    const anchorGroups = tokenGroups.filter(g => g.some(t => /\d/.test(t)));
+    // Identify brand groups (expanded with BRAND_MAP)
+    const brandTerms = new Set<string>();
+    for (const [cn, enList] of Object.entries(BRAND_MAP)) {
+      [cn, ...enList].forEach(t => brandTerms.add(t.toLowerCase()));
+    }
+    const brandGroups = tokenGroups.filter(g =>
+      !g.some(t => /\d/.test(t)) && g.some(t => brandTerms.has(t.toLowerCase()))
+    );
+
     let req = db
       .from('product_index')
       .select('name, price, url, categories, phone_models')
       .eq('tenant_id', tenantId)
       .eq('status', 'active');
 
-    for (const group of tokenGroups) {
-      const orClauses = group
+    if (anchorGroups.length > 0) {
+      // Merge ALL anchor groups into one big OR (so s24 OR s23 both work independently)
+      const allAnchorTerms = new Set<string>();
+      for (const g of anchorGroups) g.forEach(t => allAnchorTerms.add(t));
+      const anchorOr = [...allAnchorTerms]
         .map(t => `name.ilike.%${t}%,categories.ilike.%${t}%,tags.ilike.%${t}%,phone_models.ilike.%${t}%`)
         .join(',');
-      req = req.or(orClauses);
+      req = req.or(anchorOr); // ← OR, not AND — find anything with S24
+
+      // Also require brand match if brand was specified (prevents "S24" returning phone cases of wrong brand)
+      if (brandGroups.length > 0) {
+        const allBrandTerms = new Set<string>();
+        for (const g of brandGroups) g.forEach(t => allBrandTerms.add(t));
+        const brandOr = [...allBrandTerms]
+          .map(t => `name.ilike.%${t}%,categories.ilike.%${t}%,tags.ilike.%${t}%,phone_models.ilike.%${t}%`)
+          .join(',');
+        req = req.or(brandOr); // AND on top of anchor → brand-filtered
+      }
+    } else {
+      // No digit anchor — pure brand/text query, fall back to AND-of-ORs
+      for (const group of tokenGroups) {
+        const orClauses = group
+          .map(t => `name.ilike.%${t}%,categories.ilike.%${t}%,tags.ilike.%${t}%,phone_models.ilike.%${t}%`)
+          .join(',');
+        req = req.or(orClauses);
+      }
     }
 
-    const { data } = await req.limit(limit * 2);
+    const { data } = await req.limit(limit * 3);
     if (!data || data.length === 0) return [];
 
     // ─── Step 6: Re-rank by how many original raw tokens appear in result ──────

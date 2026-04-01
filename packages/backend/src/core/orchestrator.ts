@@ -243,23 +243,31 @@ export class Orchestrator {
         const products = await productService.searchProducts(tenantId, searchKeyword, 5);
         if (products.length > 0) {
           productAiContext = productService.formatProductsAsAiContext(products);
-          log.info({ tenantId, searchKeyword, found: products.length }, 'Product search context injected into AI prompt');
 
-          // Immediately tag the user with the phone model from the best matching product.
-          const bestProduct = products[0];
-          const tagFromProduct = taggingService.extractTagFromProduct(
-            bestProduct.phone_models || '',
-            bestProduct.name,
-          );
-          if (tagFromProduct) {
-            taggingService.saveTags(tenantId, userId, [tagFromProduct], 'ai_detected').catch((err: any) =>
-              log.error({ err: err.message }, 'Failed to save phone model tag'),
+          // If formatProductsAsAiContext returned empty (all products had invalid/empty URLs),
+          // fall through to the not-found guard below
+          if (!productAiContext) {
+            productAiContext = `\n\n[產品索引搜尋結果] 找到相關商品但連結資料異常，無法提供直接連結。` +
+              `請告知客戶：「抱歉，目前此型號商品的連結暫時無法取得，建議您輸入「真人」讓客服專員直接為您服務！」` +
+              `【嚴格禁止】不得提供任何 URL 連結。`;
+            log.warn({ tenantId, searchKeyword, found: products.length }, 'Products found but all URLs invalid');
+          } else {
+            log.info({ tenantId, searchKeyword, found: products.length }, 'Product search context injected into AI prompt');
+            // Tag the user with the best matching product's phone model
+            const bestProduct = products[0];
+            const tagFromProduct = taggingService.extractTagFromProduct(
+              bestProduct.phone_models || '',
+              bestProduct.name,
             );
-            log.info({ tenantId, userId, tag: tagFromProduct }, 'Phone model tag saved immediately on product match');
+            if (tagFromProduct) {
+              taggingService.saveTags(tenantId, userId, [tagFromProduct], 'ai_detected').catch((err: any) =>
+                log.error({ err: err.message }, 'Failed to save phone model tag'),
+              );
+              log.info({ tenantId, userId, tag: tagFromProduct }, 'Phone model tag saved');
+            }
           }
         } else {
           // Product intent detected but NOTHING found in index.
-          // Inject a strict "not found" guard to prevent AI from using KB URLs as fallback.
           productAiContext = `\n\n[產品索引搜尋結果] 在產品索引中找不到符合「${searchKeyword}」的商品。` +
             `請直接告訴客戶：「目前我們的系統沒有找到這個型號的相關商品，建議您輸入「真人」轉交客服專員為您查詢！」` +
             `【嚴格禁止】不得提供任何 URL 連結（包含 ppbears.com/searchcase 或任何搜尋頁面），不得叫客戶「自行上網查找」。`;
