@@ -35,6 +35,11 @@ export default function ProductsPage() {
   const [syncResult, setSyncResult] = useState<{ count: number; time: string } | null>(null);
   const [sortColumn, setSortColumn] = useState<keyof Product>('categories');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  // Staging index
+  const [stagingCount, setStagingCount] = useState(0);
+  const [activeCount, setActiveCount] = useState(0);
+  const [applying, setApplying] = useState(false);
+  const [applyResult, setApplyResult] = useState<{ promoted: number; time: string } | null>(null);
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
@@ -59,11 +64,39 @@ export default function ProductsPage() {
   async function fetchProducts() {
     try {
       const data = await apiFetch<{ products: Product[] }>('/api/admin/products');
-      const newList = data.products || [];
+      const newList = (data.products || []).filter((p: any) => p.status === 'active' || !p.status);
       setProducts(newList);
       return newList.length;
     } catch (err) { console.error(err); return 0; }
     finally { setLoading(false); }
+  }
+
+  async function fetchStagingCount() {
+    try {
+      const data = await apiFetch<{ stagingCount: number; activeCount: number }>('/api/admin/products/staging/count');
+      setStagingCount(data.stagingCount || 0);
+      setActiveCount(data.activeCount || 0);
+    } catch { /* ignore */ }
+  }
+
+  async function applyStaging() {
+    if (!confirm(`確定要將 ${stagingCount} 筆暫存商品套用到正式索引嗎？\n（目前正式索引有 ${activeCount} 筆，套用後將被取代）`)) return;
+    setApplying(true);
+    setApplyResult(null);
+    try {
+      const data = await apiFetch<{ success: boolean; promoted: number }>('/api/admin/products/staging/apply', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      if (data.success) {
+        setApplyResult({ promoted: data.promoted, time: new Date().toLocaleTimeString('zh-TW') });
+        setStagingCount(0);
+        setActiveCount(data.promoted);
+        await fetchProducts();
+        await fetchStagingCount();
+      }
+    } catch (err: any) { alert('套用失敗：' + err.message); }
+    finally { setApplying(false); }
   }
 
   async function fetchAllowlist() {
@@ -153,7 +186,7 @@ export default function ProductsPage() {
     }
   }
 
-  useEffect(() => { fetchProducts(); fetchAllowlist(); }, []);
+  useEffect(() => { fetchProducts(); fetchAllowlist(); fetchStagingCount(); }, []);
 
   const isAllowlistMode = allowlist.length > 0;
 
@@ -162,16 +195,57 @@ export default function ProductsPage() {
       <div className="topbar">
         <span className="topbar-title">📦 產品索引</span>
         <div className="topbar-right">
-          <button className="btn btn-ghost btn-sm" onClick={() => { fetchProducts(); fetchAllowlist(); }}><RefreshCw size={14} /></button>
-          <button className="btn btn-primary btn-sm" onClick={triggerSync} disabled={syncing}>
-            <RefreshCw size={14} className={syncing ? 'animate-pulse' : ''} />
-            {syncing ? '同步中...' : '立即同步'}
-          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => { fetchProducts(); fetchAllowlist(); fetchStagingCount(); }}><RefreshCw size={14} /></button>
+          {stagingCount > 0 && (
+            <button
+              className="btn btn-sm"
+              style={{ background: 'rgba(250,204,21,0.15)', color: '#f59e0b', border: '1px solid rgba(250,204,21,0.4)', fontWeight: 600 }}
+              onClick={applyStaging}
+              disabled={applying}
+            >
+              {applying ? '套用中...' : `⬆️ 套用暫存索引（${stagingCount} 筆）`}
+            </button>
+          )}
           <div className="topbar-avatar">A</div>
         </div>
       </div>
 
       <div className="page-content">
+        {/* Apply result banner */}
+        {applyResult && (
+          <div style={{
+            background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)',
+            borderRadius: 8, padding: '10px 16px', marginBottom: 16,
+            display: 'flex', alignItems: 'center', gap: 10
+          }}>
+            <span style={{ fontSize: 18 }}>🚀</span>
+            <span style={{ fontWeight: 600, color: '#22c55e' }}>
+              套用完成！正式索引已更新為 <strong>{applyResult.promoted}</strong> 個商品
+            </span>
+            <span className="text-xs text-muted" style={{ marginLeft: 'auto' }}>{applyResult.time}</span>
+          </div>
+        )}
+        {/* Staging waiting banner */}
+        {stagingCount > 0 && !applyResult && (
+          <div style={{
+            background: 'rgba(250,204,21,0.08)', border: '1px solid rgba(250,204,21,0.35)',
+            borderRadius: 8, padding: '12px 16px', marginBottom: 16,
+            display: 'flex', alignItems: 'center', gap: 12
+          }}>
+            <span style={{ fontSize: 20 }}>📥</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, color: '#f59e0b' }}>暫存索引就緒：{stagingCount} 筆商品等待上線</div>
+              <div className="text-xs text-muted" style={{ marginTop: 2 }}>點選右上角「套用暫存索引」按鈕，將本機同步的資料正式上線。目前正式索引有 {activeCount} 筆。</div>
+            </div>
+            <button
+              className="btn btn-sm"
+              style={{ background: 'rgba(250,204,21,0.2)', color: '#f59e0b', border: '1px solid rgba(250,204,21,0.4)', fontWeight: 600, whiteSpace: 'nowrap' }}
+              onClick={applyStaging} disabled={applying}
+            >
+              {applying ? '套用中...' : '套用暫存索引'}
+            </button>
+          </div>
+        )}
         {/* Sync result banner */}
         {syncResult && (
           <div style={{
@@ -181,11 +255,9 @@ export default function ProductsPage() {
           }}>
             <span style={{ fontSize: 18 }}>✅</span>
             <span style={{ fontWeight: 600, color: '#22c55e' }}>
-              同步完成！目前共索引 <strong>{syncResult.count}</strong> 個商品
+              雲端同步完成！共索引 <strong>{syncResult.count}</strong> 個商品
             </span>
-            <span className="text-xs text-muted" style={{ marginLeft: 'auto' }}>
-              {syncResult.time}
-            </span>
+            <span className="text-xs text-muted" style={{ marginLeft: 'auto' }}>{syncResult.time}</span>
           </div>
         )}
         {/* Syncing indicator */}
@@ -196,7 +268,7 @@ export default function ProductsPage() {
             display: 'flex', alignItems: 'center', gap: 10
           }}>
             <span style={{ fontSize: 18 }}>⏳</span>
-            <span style={{ color: 'var(--status-info)' }}>正在從 WooCommerce 同步商品，請稍候（約 10~30 秒）...</span>
+            <span style={{ color: 'var(--status-info)' }}>正在從 WooCommerce 同步商品，請稍候...</span>
           </div>
         )}
 

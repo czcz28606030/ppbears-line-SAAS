@@ -611,6 +611,53 @@ export async function adminRoutes(app: FastifyInstance) {
       return reply.status(202).send({ message: '產品同步任務已啟動，請稍後刷新查看結果。' });
     });
 
+    // ── Staging index management ─────────────────────────────────────────────
+
+    // GET /products/staging/count — returns staging and active product counts
+    protectedApp.get('/products/staging/count', async (request: FastifyRequest) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const db = getSupabaseAdmin();
+      const [stagingRes, activeRes] = await Promise.all([
+        db.from('product_index').select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId).eq('status', 'staging'),
+        db.from('product_index').select('id', { count: 'exact', head: true })
+          .eq('tenant_id', tenantId).eq('status', 'active'),
+      ]);
+      return {
+        stagingCount: stagingRes.count || 0,
+        activeCount: activeRes.count || 0,
+      };
+    });
+
+    // POST /products/staging/apply — promote staging → active (atomic swap)
+    protectedApp.post('/products/staging/apply', async (request: FastifyRequest, reply: FastifyReply) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const db = getSupabaseAdmin();
+
+      // Check staging exists
+      const { count: stagingCount } = await db
+        .from('product_index').select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId).eq('status', 'staging');
+
+      if (!stagingCount || stagingCount === 0) {
+        return reply.status(400).send({ error: '暫存索引為空，請先執行本機同步腳本。' });
+      }
+
+      // 1. Delete old active records
+      await db.from('product_index').delete()
+        .eq('tenant_id', tenantId).eq('status', 'active');
+
+      // 2. Promote staging → active
+      const { error } = await db.from('product_index')
+        .update({ status: 'active', synced_at: new Date().toISOString() })
+        .eq('tenant_id', tenantId).eq('status', 'staging');
+
+      if (error) return reply.status(500).send({ error: error.message });
+
+      log.info({ tenantId, promoted: stagingCount }, 'Staging index applied to active');
+      return { success: true, promoted: stagingCount };
+    });
+
     protectedApp.get('/products/search', async (request: FastifyRequest) => {
       const tenantId = (request as any).jwtUser.tenantId;
       const { q } = request.query as { q?: string };
@@ -618,6 +665,7 @@ export async function adminRoutes(app: FastifyInstance) {
       const results = await productService.searchProducts(tenantId, q);
       return { products: results };
     });
+
 
     // ── Product URL Allowlist ────────────────────────────────────────────────
 
