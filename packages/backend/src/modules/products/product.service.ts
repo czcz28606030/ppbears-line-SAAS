@@ -297,10 +297,20 @@ export class ProductService {
       '谷歌': ['google', 'pixel'],
     };
 
-    // Short suffix alias: "u" → Ultra, "pm" → Pro Max
+    // Short suffix alias — BIDIRECTIONAL so "ultra" finds "U" in DB and vice versa
+    // Each key expands to ALL equivalent forms including itself
     const ALIAS_MAP: Record<string, string[]> = {
-      u: ['ultra'],
-      pm: ['pro max'],
+      // Short → full
+      u:       ['ultra', 'u'],
+      pm:      ['pro max', 'promax', 'pm'],
+      // Full → short (so "ultra" in query also searches "u" in DB)
+      ultra:   ['ultra', 'u'],
+      promax:  ['pro max', 'promax', 'pm'],
+      // "pro max" is two tokens so handle "max" independently when after "pro"
+      plus:    ['plus', '+'],
+      mini:    ['mini'],
+      pro:     ['pro'],
+      max:     ['max'],
     };
 
     // ─── Step 2: Normalise / smart-split the raw query ────────────────────────
@@ -326,7 +336,7 @@ export class ProductService {
     const rawTokens = s.match(/[a-zA-Z0-9]+|[\u4e00-\u9fa5]+/g) || [];
 
     // ─── Step 4: Build token groups (one group = one search constraint) ────────
-    const KEEP_SINGLES = new Set(Object.keys(ALIAS_MAP)); // 'u', 'pm'
+    const KEEP_SINGLES = new Set(['u', 'pm']); // single-char aliases to keep
     const tokenGroups: string[][] = [];
 
     for (const t of rawTokens) {
@@ -336,7 +346,7 @@ export class ProductService {
 
       const group = new Set<string>([t]);
 
-      // Expand alias ('u' → 'ultra', 'pm' → 'pro max')
+      // Expand alias — BIDIRECTIONAL: "ultra" → adds "u"; "u" → adds "ultra"
       if (ALIAS_MAP[t]) ALIAS_MAP[t].forEach(a => group.add(a));
 
       // Expand brand synonyms

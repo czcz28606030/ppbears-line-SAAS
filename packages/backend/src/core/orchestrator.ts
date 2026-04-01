@@ -191,8 +191,10 @@ export class Orchestrator {
 
       // --- Phase 2: Product search intent — inject results into AI context ---
       let productAiContext = '';
+      let isProductIntent = false;
 
       if (productService.isProductQueryIntent(mergedContent)) {
+        isProductIntent = true;
         let rawSearch = mergedContent;
         // If the current message is very short (e.g., just "apple"), it might be a reply to a clarifying question.
         // We prepend the previous user message from history to provide full context (e.g., "17" + "apple").
@@ -223,14 +225,27 @@ export class Orchestrator {
             );
             log.info({ tenantId, userId, tag: tagFromProduct }, 'Phone model tag saved immediately on product match');
           }
+        } else {
+          // Product intent detected but NOTHING found in index.
+          // Inject a strict "not found" guard to prevent AI from using KB URLs as fallback.
+          productAiContext = `\n\n[產品索引搜尋結果] 在產品索引中找不到符合「${searchKeyword}」的商品。` +
+            `請直接告訴客戶：「目前我們的系統沒有找到這個型號的相關商品，建議您輸入「真人」轉交客服專員為您查詢！」` +
+            `【嚴格禁止】不得提供任何 URL 連結（包含 ppbears.com/searchcase 或任何搜尋頁面），不得叫客戶「自行上網查找」。`;
+          log.info({ tenantId, searchKeyword }, 'Product intent but no results — injecting not-found guard');
         }
       }
 
       // --- Phase 2: Knowledge base RAG context enrichment ---
-      const kbChunks = await knowledgeBaseService.retrieveContext(tenantId, mergedContent, 3);
-      const kbContext = kbChunks.length > 0
-        ? `\n\n[知識庫參考資料 - 僅供參考，勿直接複製格式]\n${kbChunks.map((c, i) => `[${i + 1}] ${c}`).join('\n')}\n[注意] 若上述參考資料中含有 URL 連結，請以純文字格式引用，不得輸出 [[url]] 或雙括號巢狀格式。`
-        : '';
+      // IMPORTANT: When the query is a product intent, skip KB entirely.
+      // KB documents may contain generic search URLs (e.g. /searchcase/) that the AI would use
+      // as a fallback instead of the product index — causing wrong/un-clickable links.
+      let kbContext = '';
+      if (!isProductIntent) {
+        const kbChunks = await knowledgeBaseService.retrieveContext(tenantId, mergedContent, 3);
+        kbContext = kbChunks.length > 0
+          ? `\n\n[知識庫參考資料 - 僅供參考，勿直接複製格式]\n${kbChunks.map((c, i) => `[${i + 1}] ${c}`).join('\n')}\n[注意] 若上述參考資料中含有 URL 連結，請以純文字格式引用，不得輸出 [[url]] 或雙括號巢狀格式。`
+          : '';
+      }
 
       // --- Load AI Strict Rules (highest priority — injected ABOVE system prompt) ---
       const { data: strictRulesRaw } = await getSupabaseAdmin()
