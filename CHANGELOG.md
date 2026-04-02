@@ -2,6 +2,11 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
+## [v0.5.22] - 2026-04-02
+### 🐛 修正：快速開單（ppbears888 開單）失敗
+- **根本原因**：`quick-order.service.ts` 在建構 WooCommerce POST API URL 時，直接使用資料庫儲存的 `woo_base_url`（非 www），沒有自動補上 `www.` 前綴，導致請求被 Hostinger Imunify360 防火牆在 TCP 層級封鎖，建立商品的 POST 請求回傳失敗，LINE 端顯示「⚠️ 開單失敗」。
+- **修復方式**：在 `getSettings()` 中加入與 `product.service.ts` 完全一致的 `www.` 自動補全邏輯（`rawWooBaseUrl.replace(/^(https?:\/\/)(?!www\.)/i, '$1www.')`），確保快速開單 POST 請求與商品同步走同一條穿透路徑。
+
 ## [v0.5.16] - 2026-04-01
 ### 🐛 修正：AI 輸出「[產品索引查到的連結]」佔位詞而非真實 URL
 - **根本原因 1**：`formatProductsAsAiContext` 使用 `[1]` 括號數字格式，AI 模型將其視為參考引用樣板，回覆時自創 `[產品索引查到的連結]` 佔位詞代替真實 URL。
