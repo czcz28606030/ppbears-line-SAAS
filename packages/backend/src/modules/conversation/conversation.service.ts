@@ -119,26 +119,43 @@ export class ConversationService {
     const { data, count } = await query;
     const conversations = data || [];
 
-    // Fetch live_agent_sessions for live_agent conversations to detect permanent sessions
+    // Fetch live_agent_sessions for live_agent conversations
     const liveConvIds = conversations.filter(c => c.status === 'live_agent').map(c => c.id);
     const permanentSet = new Set<string>();
+    const expiredConvIds: string[] = [];
+    const now = new Date();
 
     if (liveConvIds.length > 0) {
       const { data: liveSessions } = await db
         .from('live_agent_sessions')
-        .select('conversation_id, expires_at')
+        .select('conversation_id, expires_at, id')
         .in('conversation_id', liveConvIds)
         .is('released_at', null);
 
       for (const s of liveSessions || []) {
-        if (s.expires_at && new Date(s.expires_at).getFullYear() >= 2099) {
+        const isPermament = s.expires_at && new Date(s.expires_at).getFullYear() >= 2099;
+        if (isPermament) {
           permanentSet.add(s.conversation_id);
+        } else if (s.expires_at && new Date(s.expires_at) < now) {
+          // Session has expired but was never cleaned up — auto-clean now
+          expiredConvIds.push(s.conversation_id);
+          // Fire-and-forget: update session and conversation status in DB
+          db.from('live_agent_sessions')
+            .update({ released_at: now.toISOString(), released_by: 'system:auto_expire' })
+            .eq('id', s.id)
+            .then(() => {});
+          db.from('conversations')
+            .update({ status: 'active' })
+            .eq('id', s.conversation_id)
+            .then(() => {});
         }
       }
     }
 
     const enriched = conversations.map(c => ({
       ...c,
+      // Override status to 'active' for expired sessions so UI reflects reality
+      status: expiredConvIds.includes(c.id) ? 'active' : c.status,
       is_permanent: permanentSet.has(c.id),
     }));
 
@@ -148,3 +165,4 @@ export class ConversationService {
 }
 
 export const conversationService = new ConversationService();
+

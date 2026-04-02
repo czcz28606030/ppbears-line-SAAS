@@ -2,6 +2,11 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
+## [v0.5.25] - 2026-04-02
+### 🐛 修正：24小時後真人接管自動還給 AI，但 UI 仍顯示「真人接管」狀態
+- **根本原因**：`cleanupExpired()` 方法雖存在但**從未被呼叫**。Render 後端無狀態環境沒有 Cron，導致過期 session 的 `released_at` 永遠是 `null`，`conversations.status` 永遠停在 `live_agent`。機器人靠 `expires_at > now` 正確還給了 AI，但 UI 卻永遠看到「真人接管」。
+- **修復方式**：在 `listConversations()` 中加入即時過期偵測：每次 API 被呼叫時（UI 每 5 秒輪詢），自動檢查 `live_agent` 對話的 `expires_at`，若已過期則即時回傳 `active` 狀態給 UI，並 fire-and-forget 更新資料庫。
+
 ## [v0.5.23] - 2026-04-02
 ### 🐛 修正：OPPO Reno13 5G 等品牌搜尋失敗 + AI 幻覺「我們只做三星」
 - **根本原因 1（搜尋失敗）**：`reno13` 沒有被斷詞拆開，`5g` 作為 anchor token 干擾搜尋結果，且 `oppo` 不在 `BRAND_MAP` 導致品牌過濾無法啟動。
