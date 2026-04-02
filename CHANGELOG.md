@@ -2,6 +2,13 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
+## [v0.5.23] - 2026-04-02
+### 🐛 修正：OPPO Reno13 5G 等品牌搜尋失敗 + AI 幻覺「我們只做三星」
+- **根本原因 1（搜尋失敗）**：`reno13` 沒有被斷詞拆開，`5g` 作為 anchor token 干擾搜尋結果，且 `oppo` 不在 `BRAND_MAP` 導致品牌過濾無法啟動。
+- **根本原因 2（AI 幻覺）**：商品搜尋失敗後，not-found guard prompt 只說「告知找不到」，AI 自行用知識庫中的敘述（三星相關）補充「原因」，捏造出「我們目前專注三星手機殼」等完全錯誤的說法。
+- **修復方式 1**：`product.service.ts` Step 2d 新增 reno/oppo/vivo/realme 等品牌的數字前斷詞（`reno13` → `reno 13`）；Step 2e 新增 5G/4G/3G 等通訊制式雜訊過濾；`BRAND_MAP` 加入 OPPO/Vivo/Realme/Sony/Google/Motorola 英文品牌自身條目，確保 anchorGroups 能正確施加品牌過濾。
+- **修復方式 2**：`orchestrator.ts` not-found guard 強化，明確插入「**嚴格禁止說我們只做某品牌手機殼**，PPBears 提供多品牌服務，系統索引找不到不代表沒有此商品」的規則，並要求 AI 直接引導客戶輸入真人。
+
 ## [v0.5.22] - 2026-04-02
 ### 🐛 修正：快速開單（ppbears888 開單）失敗
 - **根本原因**：`quick-order.service.ts` 在建構 WooCommerce POST API URL 時，直接使用資料庫儲存的 `woo_base_url`（非 www），沒有自動補上 `www.` 前綴，導致請求被 Hostinger Imunify360 防火牆在 TCP 層級封鎖，建立商品的 POST 請求回傳失敗，LINE 端顯示「⚠️ 開單失敗」。

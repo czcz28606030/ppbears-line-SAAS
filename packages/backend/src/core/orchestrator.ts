@@ -268,9 +268,11 @@ export class Orchestrator {
           }
         } else {
           // Product intent detected but NOTHING found in index.
-          productAiContext = `\n\n[產品索引搜尋結果] 在產品索引中找不到符合「${searchKeyword}」的商品。` +
-            `請直接告訴客戶：「目前我們的系統沒有找到這個型號的相關商品，建議您輸入「真人」轉交客服專員為您查詢！」` +
-            `【嚴格禁止】不得提供任何 URL 連結（包含 ppbears.com/searchcase 或任何搜尋頁面），不得叫客戶「自行上網查找」。`;
+          productAiContext = `\n\n[產品索引搜尋結果] 在產品索引中暫時找不到符合「${searchKeyword}」的商品。` +
+            `【非常重要 - 嚴格遵守下列規則】\n` +
+            `1. 絕對禁止說「我們只做某某品牌的手機殼」或「我們目前專注於XX手機殼」等品牌限定語句。PPBears 提供多品牌客製化手機殼服務，系統索引暫時找不到不代表沒有此商品。\n` +
+            `2. 必須直接回覆：「您好！關於您的 ${searchKeyword} 手機殼需求，請輸入「真人」讓客服專員直接為您確認並提供商品連結！」\n` +
+            `3. 不得提供任何 URL 連結，不得叫客戶「自行上網查找」。`;
           log.info({ tenantId, searchKeyword }, 'Product intent but no results — injecting not-found guard');
         }
       }

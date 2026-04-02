@@ -360,6 +360,15 @@ export class ProductService {
       '華碩': ['asus', 'rog'],
       '索尼': ['sony', 'xperia'],
       '谷歌': ['google', 'pixel'],
+      '歐珀': ['oppo', 'reno', 'find'],
+      '維沃': ['vivo', 'iqoo'],
+      // English brand self-entries so anchorGroups still get brand-filtered
+      'oppo':    ['oppo', 'reno', 'find'],
+      'vivo':    ['vivo', 'iqoo'],
+      'realme':  ['realme'],
+      'sony':    ['sony', 'xperia'],
+      'google':  ['google', 'pixel'],
+      'motorola':['motorola', 'moto'],
     };
 
     // Short suffix alias — BIDIRECTIONAL so "ultra" finds "U" in DB and vice versa
@@ -394,8 +403,12 @@ export class ProductService {
     // 2c. Split U/u that is glued to a digit (e.g. "17U" → "17 u")
     s = s.replace(/(\d)(u)\b/g, '$1 $2');
 
-    // 2d. Split known brand names glued before digits (e.g. "iphone16" → "iphone 16")
-    s = s.replace(/(iphone|ipad|galaxy|pixel|pad)(\d)/g, '$1 $2');
+    // 2d. Split known brand names glued before digits (e.g. "iphone16" → "iphone 16", "reno13" → "reno 13")
+    s = s.replace(/(iphone|ipad|galaxy|pixel|pad|reno|oppo|vivo|realme|poco|iqoo|zenfone|xperia|moto|aquos|note)(\d)/gi, '$1 $2');
+
+    // 2e. Strip connectivity suffixes that are pure noise for product matching
+    //     e.g. "oppo reno13 5g" → remove "5g" before tokenizing
+    s = s.replace(/\b[2-5]g\b/gi, ' ');
 
     // ─── Step 3: Tokenize ─────────────────────────────────────────────────────
     const rawTokens = s.match(/[a-zA-Z0-9]+|[\u4e00-\u9fa5]+/g) || [];
@@ -408,6 +421,8 @@ export class ProductService {
       // Skip pure noise: single letter (unless it's an alias key) or single digit
       if (t.length === 1 && /[a-zA-Z]/.test(t) && !KEEP_SINGLES.has(t)) continue;
       if (t.length === 1 && /[0-9]/.test(t)) continue;
+      // Skip connectivity suffixes: 5g, 4g, 3g, 2g (e.g. from "OPPO Reno13 5G")
+      if (/^[2-5]g$/i.test(t)) continue;
 
       const group = new Set<string>([t]);
 

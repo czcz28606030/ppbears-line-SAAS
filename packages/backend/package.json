@@ -1,6 +1,6 @@
 ﻿{
   "name": "@ppbears/backend",
-  "version": "0.5.22",
+  "version": "0.5.23",
   "private": true,
   "type": "module",
   "scripts": {
@@ -40,4 +40,5 @@
     "vitest": "^2.1.0"
   }
 }
+
 

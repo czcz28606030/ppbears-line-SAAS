@@ -1,6 +1,6 @@
 ﻿{
   "name": "@ppbears/admin",
-  "version": "0.5.22",
+  "version": "0.5.23",
   "private": true,
   "scripts": {
     "dev": "next dev --port 3001",
@@ -23,4 +23,5 @@
     "typescript": "^5.7.0"
   }
 }
+
 
