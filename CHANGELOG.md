@@ -3,11 +3,38 @@
 本檔案將記錄此專案所有值得注意的更新與變動。
 
 ## [v0.5.31] - 2026-04-10
-### 🐛 修正：改用 Vercel API Route 中繼，徹底繞過 Imunify360 IP 封鎖
-- **根本原因（最終確認）**：Hostinger Imunify360 封鎖的是 Render 的出站 IP（74.220.49.248）本身，並非特定路徑。Render 對 ppbears.com 的所有請求（包含 wc-proxy.php）在抵達 PHP 前就被攔截並回傳 reCAPTCHA HTML。
-- **解決方案**：在 admin Vercel 專案新增 `/api/woo-relay` API Route，作為 Render → WooCommerce 的中繼。Vercel 的出站 IP 乾淨，不在 Imunify360 黑名單中。
-- **流量路徑**：`Render (74.220.49.248)` → `Vercel API Route (Vercel IP)` → `WooCommerce API`
-- **需設定**：Vercel 環境變數 `WOO_RELAY_SECRET`；Render 的 `WOO_PROXY_URL` 改指向 Vercel Route URL
+### 🐛 修正：客戶訂單查詢完全恢復（Vercel API Route 中繼 + turbo.json 修正）
+
+#### 根本原因（最終確認）
+Hostinger Imunify360 將 Render 出站 IP `74.220.49.248` 列為黑名單（AbuseIPDB 信譽不良的共用 IP）。Render 對 `ppbears.com` 的**所有 HTTP 請求**（包含 `/wp-json/wc/v3/`、`wc-proxy.php`、甚至 localhost curl）在到達 PHP 或 WordPress 之前，就被 Imunify360 攔截並回傳 reCAPTCHA Bot Verification HTML（HTTP 200 但非 JSON）。後端嘗試 `JSON.parse(html)` 拋出例外，catch 攔截後回傳 `null`，最終顯示「查無訂單」。
+
+#### 排查過程
+| 方案 | 結果 |
+|------|------|
+| PHP Proxy v1（curl → https://www.ppbears.com） | ❌ Render IP 被攔截，PHP 未執行 |
+| PHP Proxy v2（curl → http://localhost + Host header） | ❌ 同上，Imunify360 在 HTTP 層攔截 |
+| PHP Proxy v3（require wp-load.php 直接呼叫 WC PHP 函式） | ❌ PHP 未執行，Render IP 被擋在入口 |
+| Hostinger IP Manager 白名單 | ❌ 無效，無法覆蓋 Imunify360 規則 |
+| 聯繫 Hostinger 客服 | ❌ 拒絕解封（信譽問題） |
+
+#### 最終解決方案
+在 admin Vercel 專案（`packages/admin`）新增 `/api/woo-relay` Next.js API Route，作為 Render → WooCommerce 的中繼。Vercel 的出站 IP 不在任何黑名單，可正常存取 WooCommerce API。
+
+**最終流量路徑：**
+```
+LINE 用戶 → Render (74.220.49.248) → Vercel /api/woo-relay (Vercel IP) → WooCommerce
+```
+
+#### 修改內容
+- 新增 `packages/admin/src/app/api/woo-relay/route.ts`：驗證 `X-Proxy-Secret`，將請求轉發至 `https://www.ppbears.com/wp-json/wc/v3/`，域名寫死防止濫用
+- `turbo.json`：build task 加入 `"env": ["WOO_RELAY_SECRET"]`，修正 Turborepo 在 Vercel 部署時不注入該環境變數的問題
+
+#### 需設定的環境變數
+| 平台 | Key | Value |
+|------|-----|-------|
+| Vercel | `WOO_RELAY_SECRET` | `ppbx_8f3a2c9d7b1e4f6a0e5d2c8b` |
+| Render | `WOO_PROXY_URL` | `https://ppbears-admin.vercel.app/api/woo-relay` |
+| Render | `WOO_PROXY_SECRET` | `ppbx_8f3a2c9d7b1e4f6a0e5d2c8b` |
 
 ## [v0.5.30] - 2026-04-10
 ### 🐛 修正：PHP Proxy v3 — 改用 WordPress 直接 PHP 整合，完全繞過 WAF
