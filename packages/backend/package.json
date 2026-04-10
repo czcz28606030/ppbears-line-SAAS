@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "@ppbears/backend",
   "version": "0.5.26",
   "private": true,
@@ -40,5 +40,3 @@
     "vitest": "^2.1.0"
   }
 }
-
-

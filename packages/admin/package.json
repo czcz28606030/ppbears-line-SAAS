@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "@ppbears/admin",
   "version": "0.5.26",
   "private": true,
@@ -23,5 +23,3 @@
     "typescript": "^5.7.0"
   }
 }
-
-
