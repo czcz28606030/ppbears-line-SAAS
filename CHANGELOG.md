@@ -2,6 +2,17 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
+## [v0.5.27] - 2026-04-10
+### 🐛 修正：訂單查詢持續失敗（Hostinger Imunify360 封鎖 Render IP）
+- **根本原因**：Hostinger Imunify360 WAF 將 Render 伺服器 IP（`74.220.49.248`）列為黑名單，導致後端直接呼叫 WooCommerce REST API 回傳 403 Forbidden。Hostinger IP Manager 白名單**無法覆蓋** Imunify360 規則；Hostinger 客服確認因信譽問題無法解除封鎖。
+- **解決方案（PHP Proxy）**：在 Hostinger 伺服器上部署 `wc-proxy.php`（`public_html/wc-proxy.php`），由 PHP 腳本在**伺服器本機**呼叫 WooCommerce API（請求來源 IP 為 `127.0.0.1`，不受 Imunify360 外部 IP 過濾）。Render 後端改透過此代理呼叫，並以 `X-Proxy-Secret` Header 驗證身份防止濫用。
+- **修改檔案**：
+  - 新增 `hostinger/wc-proxy.php`（需手動上傳至 Hostinger `public_html/`）
+  - `woocommerce.service.ts`：新增 `buildRequest()` 方法，偵測環境變數 `WOO_PROXY_URL` / `WOO_PROXY_SECRET`，有值時自動走代理路徑，無值時維持原有直連邏輯（向下相容）
+- **需設定 Render 環境變數**：
+  - `WOO_PROXY_URL` = `https://www.ppbears.com/wc-proxy.php`
+  - `WOO_PROXY_SECRET` = `ppbx_8f3a2c9d7b1e4f6a0e5d2c8b`
+
 ## [v0.5.26] - 2026-04-10
 ### 🐛 修正：客戶查詢訂單回覆「查無訂單」
 - **根本原因**：`woocommerce.service.ts`（訂單查詢）的 `getCredentials()` 在建構 API URL 時，直接使用資料庫儲存的 `woo_base_url`（非 www），沒有自動補上 `www.` 前綴，導致請求被 Hostinger Imunify360 防火牆在 TCP 層級封鎖，WooCommerce API 呼叫失敗並 silently 回傳 `null`，最終顯示「查無訂單」。`quick-order.service.ts` 與 `product.service.ts` 已在 v0.5.22 修正此問題，但 `woocommerce.service.ts` 當時被遺漏。

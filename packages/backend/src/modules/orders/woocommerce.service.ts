@@ -97,6 +97,43 @@ export class WooCommerceService {
   }
 
   /**
+   * Build a WooCommerce request URL + headers.
+   * When WOO_PROXY_URL / WOO_PROXY_SECRET are set, route through the
+   * PHP proxy on Hostinger (bypasses Imunify360 external-IP block).
+   */
+  private buildRequest(
+    creds: { baseUrl: string; consumerKey: string; consumerSecret: string },
+    apiPath: string,
+    extraParams: Record<string, string> = {},
+  ): { url: string; headers: Record<string, string> } {
+    const proxyUrl    = process.env.WOO_PROXY_URL;
+    const proxySecret = process.env.WOO_PROXY_SECRET;
+    const auth        = this.buildAuthQuery(creds.consumerKey, creds.consumerSecret);
+
+    if (proxyUrl && proxySecret) {
+      // Route through PHP proxy: wc-proxy.php?path=orders/123&consumer_key=...
+      const extra = Object.entries(extraParams)
+        .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+        .join('&');
+      const parts = [`path=${encodeURIComponent(apiPath)}`, extra, auth].filter(Boolean);
+      return {
+        url: `${proxyUrl}?${parts.join('&')}`,
+        headers: { 'X-Proxy-Secret': proxySecret },
+      };
+    }
+
+    // Direct WooCommerce call
+    const extra = Object.entries(extraParams)
+      .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+      .join('&');
+    const parts = [extra, auth].filter(Boolean);
+    return {
+      url: `${creds.baseUrl}/wp-json/wc/v3/${apiPath}?${parts.join('&')}`,
+      headers: {},
+    };
+  }
+
+  /**
    * Search order by order number.
    */
   async findOrderByNumber(tenantId: string, orderNumber: string): Promise<WooOrder | null> {
@@ -108,9 +145,11 @@ export class WooCommerceService {
 
     try {
       // Approach 1: Try fetching directly by ID (which is the most common case for WC order numbers)
-      const directUrl = `${creds.baseUrl}/wp-json/wc/v3/orders/${encodeURIComponent(orderNumber)}?${this.buildAuthQuery(creds.consumerKey, creds.consumerSecret)}`;
-      const directRes = await wooRequest(directUrl);
-      
+      const { url: directUrl, headers: directHeaders } = this.buildRequest(
+        creds, `orders/${encodeURIComponent(orderNumber)}`
+      );
+      const directRes = await wooRequest(directUrl, { headers: directHeaders });
+
       if (directRes.ok) {
         const order = await directRes.json() as WooOrder;
         log.info({ tenantId, orderNumber }, 'Found order directly by ID');
@@ -119,18 +158,20 @@ export class WooCommerceService {
 
       // Approach 2: If direct ID fetch fails, fallback to search (for custom order numbers)
       log.info({ tenantId, orderNumber, status: directRes.status }, 'Direct ID fetch failed, trying search fallback');
-      const searchUrl = `${creds.baseUrl}/wp-json/wc/v3/orders?search=${encodeURIComponent(orderNumber)}&per_page=10&${this.buildAuthQuery(creds.consumerKey, creds.consumerSecret)}`;
-      const searchRes = await wooRequest(searchUrl);
-      
+      const { url: searchUrl, headers: searchHeaders } = this.buildRequest(
+        creds, 'orders', { search: orderNumber, per_page: '10' }
+      );
+      const searchRes = await wooRequest(searchUrl, { headers: searchHeaders });
+
       if (!searchRes.ok) {
         throw new Error(`WC API search error: ${searchRes.status}`);
       }
-      
+
       const orders = await searchRes.json() as WooOrder[];
       const matched = orders.find(o =>
         String(o.number) === String(orderNumber) || String(o.id) === String(orderNumber)
       );
-      
+
       if (matched) {
         log.info({ tenantId, orderNumber }, 'Found order via search fallback');
         return matched;
@@ -152,8 +193,10 @@ export class WooCommerceService {
     if (!creds) return [];
 
     try {
-      const url = `${creds.baseUrl}/wp-json/wc/v3/orders?search=${encodeURIComponent(contact)}&per_page=5&${this.buildAuthQuery(creds.consumerKey, creds.consumerSecret)}`;
-      const res = await wooRequest(url);
+      const { url, headers } = this.buildRequest(
+        creds, 'orders', { search: contact, per_page: '5' }
+      );
+      const res = await wooRequest(url, { headers });
       if (!res.ok) return [];
       return await res.json() as WooOrder[];
     } catch (err: any) {
