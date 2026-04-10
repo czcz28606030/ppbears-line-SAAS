@@ -213,6 +213,40 @@ export async function adminRoutes(app: FastifyInstance) {
       }
     });
 
+    protectedApp.get<{ Querystring: { order: string } }>('/woo/test-proxy-raw', async (request: FastifyRequest<{ Querystring: { order: string } }>) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const { order } = request.query as { order: string };
+
+      const proxyUrl    = process.env.WOO_PROXY_URL;
+      const proxySecret = process.env.WOO_PROXY_SECRET;
+      if (!proxyUrl || !proxySecret) return { ok: false, error: 'Proxy env vars not set' };
+
+      const db = getSupabaseAdmin();
+      const { data } = await db.from('tenant_settings').select('key, value')
+        .eq('tenant_id', tenantId).in('key', ['woo_consumer_key', 'woo_consumer_secret']);
+      const settings: Record<string, string> = {};
+      for (const row of data || []) settings[row.key] = row.value;
+      const ck = settings['woo_consumer_key'];
+      const cs = settings['woo_consumer_secret'];
+      if (!ck || !cs) return { ok: false, error: 'WooCommerce credentials not set' };
+
+      const testUrl = `${proxyUrl}?path=${encodeURIComponent('orders/' + order)}&consumer_key=${ck}&consumer_secret=${cs}`;
+
+      try {
+        const res = await wooRequest(testUrl, { headers: { 'X-Proxy-Secret': proxySecret } });
+        const body = await res.text();
+        return {
+          ok: res.ok,
+          http_status: res.status,
+          is_json: body.trimStart().startsWith('{') || body.trimStart().startsWith('['),
+          body_length: body.length,
+          body_preview: body.substring(0, 600),
+        };
+      } catch (err: any) {
+        return { ok: false, error: err.message };
+      }
+    });
+
     // Conversations
     protectedApp.get('/conversations', async (request: FastifyRequest) => {
       const tenantId = (request as any).jwtUser.tenantId;

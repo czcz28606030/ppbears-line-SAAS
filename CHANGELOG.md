@@ -2,6 +2,12 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
+## [v0.5.29] - 2026-04-10
+### 🐛 修正：PHP Proxy 內部 curl 仍被 Imunify360 Bot Protection 攔截
+- **根本原因**：PHP Proxy v1 用 `https://www.ppbears.com` 呼叫，請求走外部網路堆疊，仍被 Imunify360 Bot Protection 以 HTML challenge 頁面攔截。User-Agent `PPBears-WC-Proxy/1.0` 被識別為 bot。
+- **修復方式**：改用 `http://localhost/wp-json/wc/v3/` + `Host: www.ppbears.com` header，讓請求走本機迴路 (127.0.0.1)，Imunify360 完全不介入。User-Agent 改為 Chrome 瀏覽器字串。加入 localhost 失敗時自動備援至 `https://www.ppbears.com`。
+- **新增診斷端點** `/woo/test-proxy-raw`：顯示 PHP Proxy 實際回傳的原始內容，方便確認是否為 JSON 或 HTML challenge
+
 ## [v0.5.28] - 2026-04-10
 ### 🔧 診斷：強化 WooCommerce 診斷端點以支援 Proxy 模式
 - `test-connection`：新增 `proxy_url` / `proxy_secret` 狀態欄位，可確認 Render env var 是否已正確載入
