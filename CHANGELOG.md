@@ -2,6 +2,11 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
+## [v0.5.26] - 2026-04-10
+### 🐛 修正：客戶查詢訂單回覆「查無訂單」
+- **根本原因**：`woocommerce.service.ts`（訂單查詢）的 `getCredentials()` 在建構 API URL 時，直接使用資料庫儲存的 `woo_base_url`（非 www），沒有自動補上 `www.` 前綴，導致請求被 Hostinger Imunify360 防火牆在 TCP 層級封鎖，WooCommerce API 呼叫失敗並 silently 回傳 `null`，最終顯示「查無訂單」。`quick-order.service.ts` 與 `product.service.ts` 已在 v0.5.22 修正此問題，但 `woocommerce.service.ts` 當時被遺漏。
+- **修復方式**：在 `woocommerce.service.ts` 的 `getCredentials()` 加入與其他服務一致的 `www.` 自動補全邏輯（`rawBaseUrl.replace(/^(https?:\/\/)(?!www\.)/i, '$1www.')`），確保訂單查詢 API 請求能穿透 Hostinger 防火牆。
+
 ## [v0.5.25] - 2026-04-02
 ### 🐛 修正：24小時後真人接管自動還給 AI，但 UI 仍顯示「真人接管」狀態
 - **根本原因**：`cleanupExpired()` 方法雖存在但**從未被呼叫**。Render 後端無狀態環境沒有 Cron，導致過期 session 的 `released_at` 永遠是 `null`，`conversations.status` 永遠停在 `live_agent`。機器人靠 `expires_at > now` 正確還給了 AI，但 UI 卻永遠看到「真人接管」。
