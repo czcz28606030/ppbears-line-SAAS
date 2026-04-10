@@ -2,6 +2,11 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
+## [v0.5.28] - 2026-04-10
+### 🔧 診斷：強化 WooCommerce 診斷端點以支援 Proxy 模式
+- `test-connection`：新增 `proxy_url` / `proxy_secret` 狀態欄位，可確認 Render env var 是否已正確載入
+- `test-order`：改用 Proxy-aware 的 `wooCommerceService.findOrderByNumber()`，實際測試完整 Proxy 呼叫鏈路，並回傳 `proxy_mode` 欄位
+
 ## [v0.5.27] - 2026-04-10
 ### 🐛 修正：訂單查詢持續失敗（Hostinger Imunify360 封鎖 Render IP）
 - **根本原因**：Hostinger Imunify360 WAF 將 Render 伺服器 IP（`74.220.49.248`）列為黑名單，導致後端直接呼叫 WooCommerce REST API 回傳 403 Forbidden。Hostinger IP Manager 白名單**無法覆蓋** Imunify360 規則；Hostinger 客服確認因信譽問題無法解除封鎖。

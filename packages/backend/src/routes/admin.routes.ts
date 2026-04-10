@@ -114,6 +114,8 @@ export async function adminRoutes(app: FastifyInstance) {
         woo_base_url: baseUrl ? `✅ 已設定 (${baseUrl})` : '❌ 未設定',
         woo_consumer_key: consumerKey ? `✅ 已設定 (${consumerKey.substring(0, 8)}...)` : '❌ 未設定',
         woo_consumer_secret: consumerSecret ? `✅ 已設定` : '❌ 未設定',
+        proxy_url: process.env.WOO_PROXY_URL ? `✅ 已設定 (${process.env.WOO_PROXY_URL})` : '❌ 未設定（將直連 WooCommerce）',
+        proxy_secret: process.env.WOO_PROXY_SECRET ? '✅ 已設定' : '❌ 未設定',
       };
 
       if (!baseUrl || !consumerKey || !consumerSecret) {
@@ -190,36 +192,25 @@ export async function adminRoutes(app: FastifyInstance) {
     protectedApp.get<{ Querystring: { order: string } }>('/woo/test-order', async (request: FastifyRequest<{ Querystring: { order: string } }>) => {
       const tenantId = (request as any).jwtUser.tenantId;
       const { order } = request.query;
-      const db = getSupabaseAdmin();
-      const { data } = await db
-        .from('tenant_settings')
-        .select('key, value')
-        .eq('tenant_id', tenantId)
-        .in('key', ['woo_base_url', 'woo_consumer_key', 'woo_consumer_secret']);
 
-      const settings: Record<string, string> = {};
-      for (const row of data || []) settings[row.key] = row.value;
+      const proxyMode = !!(process.env.WOO_PROXY_URL && process.env.WOO_PROXY_SECRET);
 
-      const baseUrl = settings['woo_base_url']?.replace(/\/$/, '');
-      const ck = settings['woo_consumer_key'];
-      const cs = settings['woo_consumer_secret'];
-
-      if (!baseUrl || !ck || !cs) return { ok: false, error: 'WooCommerce 憑證未設定' };
-
-      const directUrl = `${baseUrl}/wp-json/wc/v3/orders/${order}?consumer_key=${ck}&consumer_secret=${cs}`;
-      const searchUrl = `${baseUrl}/wp-json/wc/v3/orders?search=${order}&per_page=5&consumer_key=${ck}&consumer_secret=${cs}`;
-
-      const [directRes, searchRes] = await Promise.all([fetch(directUrl), fetch(searchUrl)]);
-      const directBody = await directRes.json().catch(() => null);
-      const searchBody = await searchRes.json().catch(() => null);
-
-      return {
-        ok: true,
-        directStatus: directRes.status,
-        directResult: directBody,
-        searchStatus: searchRes.status,
-        searchResult: searchBody,
-      };
+      try {
+        const { wooCommerceService } = await import('../modules/orders/woocommerce.service.js');
+        const result = await wooCommerceService.findOrderByNumber(tenantId, order);
+        return {
+          ok: !!result,
+          proxy_mode: proxyMode,
+          proxy_url: process.env.WOO_PROXY_URL || '（未設定）',
+          order_found: !!result,
+          order_number: result?.number ?? null,
+          order_status: result?.status ?? null,
+          order_total: result?.total ?? null,
+          message: result ? `✅ 訂單 #${result.number} 查詢成功` : '❌ 查無訂單（可能是 API 連線問題或訂單不存在）',
+        };
+      } catch (err: any) {
+        return { ok: false, proxy_mode: proxyMode, error: err.message };
+      }
     });
 
     // Conversations
