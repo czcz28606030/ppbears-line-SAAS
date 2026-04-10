@@ -2,6 +2,13 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
+## [v0.5.31] - 2026-04-10
+### 🐛 修正：改用 Vercel API Route 中繼，徹底繞過 Imunify360 IP 封鎖
+- **根本原因（最終確認）**：Hostinger Imunify360 封鎖的是 Render 的出站 IP（74.220.49.248）本身，並非特定路徑。Render 對 ppbears.com 的所有請求（包含 wc-proxy.php）在抵達 PHP 前就被攔截並回傳 reCAPTCHA HTML。
+- **解決方案**：在 admin Vercel 專案新增 `/api/woo-relay` API Route，作為 Render → WooCommerce 的中繼。Vercel 的出站 IP 乾淨，不在 Imunify360 黑名單中。
+- **流量路徑**：`Render (74.220.49.248)` → `Vercel API Route (Vercel IP)` → `WooCommerce API`
+- **需設定**：Vercel 環境變數 `WOO_RELAY_SECRET`；Render 的 `WOO_PROXY_URL` 改指向 Vercel Route URL
+
 ## [v0.5.30] - 2026-04-10
 ### 🐛 修正：PHP Proxy v3 — 改用 WordPress 直接 PHP 整合，完全繞過 WAF
 - **根本原因**：Imunify360 對 `/wp-json/wc/v3/` 路徑本身套用 reCAPTCHA Bot Verification，即使從 `127.0.0.1` localhost 發出的請求也同樣被攔截，任何 HTTP 請求方式皆無效。
