@@ -2,6 +2,12 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
+## [v0.5.30] - 2026-04-10
+### 🐛 修正：PHP Proxy v3 — 改用 WordPress 直接 PHP 整合，完全繞過 WAF
+- **根本原因**：Imunify360 對 `/wp-json/wc/v3/` 路徑本身套用 reCAPTCHA Bot Verification，即使從 `127.0.0.1` localhost 發出的請求也同樣被攔截，任何 HTTP 請求方式皆無效。
+- **解決方案（v3）**：PHP Proxy 改為直接 `require_once(wp-load.php)` 載入 WordPress，透過 `wc_get_order()` / `wc_get_orders()` WooCommerce PHP 函式直接查詢訂單，完全不發任何 HTTP 請求。WAF/Imunify360 只能攔截 HTTP 請求，PHP 函式呼叫完全不受影響。
+- 支援：依 ID 查單、依 billing_email 搜尋、依 billing_phone (meta) 搜尋
+
 ## [v0.5.29] - 2026-04-10
 ### 🐛 修正：PHP Proxy 內部 curl 仍被 Imunify360 Bot Protection 攔截
 - **根本原因**：PHP Proxy v1 用 `https://www.ppbears.com` 呼叫，請求走外部網路堆疊，仍被 Imunify360 Bot Protection 以 HTML challenge 頁面攔截。User-Agent `PPBears-WC-Proxy/1.0` 被識別為 bot。
