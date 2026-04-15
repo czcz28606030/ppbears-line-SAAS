@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, Suspense } from 'react';
+import { useEffect, useState, useCallback, Suspense, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { apiFetch } from '../../../lib/api';
 import { Megaphone, Send, Users, CheckCircle, XCircle, Clock, RefreshCw } from 'lucide-react';
@@ -27,6 +27,8 @@ function BroadcastContent() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Form state
   const [form, setForm] = useState({
@@ -56,6 +58,17 @@ function BroadcastContent() {
     loadTags();
     loadCampaigns();
   }, [loadTags, loadCampaigns]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   const handlePreview = async () => {
     if (!form.tag_filter) return;
@@ -159,20 +172,63 @@ function BroadcastContent() {
               目標族群標籤
             </label>
             <div style={{ display: 'flex', gap: 8 }}>
-              <select
-                value={form.tag_filter}
-                onChange={(e) => {
-                  setForm((f) => ({ ...f, tag_filter: e.target.value }));
-                  setPreviewCount(null);
-                }}
-                style={{
-                  flex: 1, padding: '9px 14px', borderRadius: 8, fontSize: 14,
-                  border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)',
-                }}
-              >
-                <option value="">— 選擇標籤 —</option>
-                {tags.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
+              {/* Custom dropdown — avoids native <select> white-background issue in dark mode */}
+              <div ref={dropdownRef} style={{ flex: 1, position: 'relative' }}>
+                {/* Trigger button */}
+                <button
+                  type="button"
+                  onClick={() => setDropdownOpen((o) => !o)}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '9px 14px', borderRadius: 8, fontSize: 14,
+                    border: '1px solid var(--border)', background: 'var(--surface)', color: form.tag_filter ? 'var(--text)' : 'var(--text-muted)',
+                    cursor: 'pointer', textAlign: 'left',
+                  }}
+                >
+                  <span>{form.tag_filter || '— 選擇標籤 —'}</span>
+                  <span style={{ marginLeft: 8, fontSize: 10, opacity: 0.6 }}>{dropdownOpen ? '▲' : '▼'}</span>
+                </button>
+
+                {/* Dropdown list */}
+                {dropdownOpen && (
+                  <div style={{
+                    position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
+                    background: '#1a1d2e', border: '1px solid var(--border)',
+                    borderRadius: 8, zIndex: 999, maxHeight: 260, overflowY: 'auto',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                  }}>
+                    {/* "— 選擇標籤 —" placeholder option */}
+                    <div
+                      onClick={() => { setForm((f) => ({ ...f, tag_filter: '' })); setPreviewCount(null); setDropdownOpen(false); }}
+                      style={{
+                        padding: '9px 14px', fontSize: 14, cursor: 'pointer', color: '#8b93b0',
+                        borderBottom: '1px solid rgba(255,255,255,0.07)',
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = '#2a2d3e')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      — 選擇標籤 —
+                    </div>
+                    {tags.map((t) => (
+                      <div
+                        key={t}
+                        onClick={() => { setForm((f) => ({ ...f, tag_filter: t })); setPreviewCount(null); setDropdownOpen(false); }}
+                        style={{
+                          padding: '9px 14px', fontSize: 14, cursor: 'pointer',
+                          color: t === form.tag_filter ? '#ffffff' : '#d0d5ea',
+                          background: t === form.tag_filter ? 'var(--accent)' : 'transparent',
+                          fontWeight: t === form.tag_filter ? 600 : 400,
+                        }}
+                        onMouseEnter={(e) => { if (t !== form.tag_filter) e.currentTarget.style.background = '#2a2d3e'; }}
+                        onMouseLeave={(e) => { if (t !== form.tag_filter) e.currentTarget.style.background = 'transparent'; }}
+                      >
+                        {t}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={handlePreview}
                 disabled={!form.tag_filter || previewLoading}
