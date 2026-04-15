@@ -311,23 +311,49 @@ export async function adminRoutes(app: FastifyInstance) {
       // Look up conversation to get user_id
       const { data: conv } = await db.from('conversations').select('user_id, status').eq('id', conversationId).eq('tenant_id', tenantId).single();
       if (!conv) return reply.status(404).send({ error: 'Conversation not found' });
-      if (conv.status === 'live_agent') return { success: true, message: 'Already in live agent mode' };
 
       if (permanent) {
         // Permanent mode: expires in year 2099 (won't be cleaned up by the auto-expire scheduler)
+        // IMPORTANT: Even if already in live_agent mode, we must still create a permanent session.
+        // The old session may be a temporary one that will expire, causing the bot to re-engage.
+        // Fix: release any existing non-permanent sessions first, then insert the permanent one.
         const permanentExpiry = new Date('2099-12-31T23:59:59Z').toISOString();
+
+        // Release any existing active (non-permanent) sessions for this conversation
+        const { data: existingSessions } = await db
+          .from('live_agent_sessions')
+          .select('id, expires_at')
+          .eq('conversation_id', conversationId)
+          .eq('tenant_id', tenantId)
+          .is('released_at', null);
+
+        const now = new Date().toISOString();
+        for (const s of existingSessions || []) {
+          const isAlreadyPermanent = s.expires_at && new Date(s.expires_at).getFullYear() >= 2099;
+          if (isAlreadyPermanent) {
+            // Already permanent — nothing to do
+            return { success: true, permanent: true, message: 'Already in permanent live agent mode' };
+          }
+          // Release the temporary session
+          await db.from('live_agent_sessions')
+            .update({ released_at: now, released_by: `admin:${adminEmail}:upgrade_to_permanent` })
+            .eq('id', s.id);
+        }
+
         const { data, error } = await db.from('live_agent_sessions').insert({
           tenant_id: tenantId,
           user_id: conv.user_id,
           conversation_id: conversationId,
           reason: `Permanent admin takeover by ${adminEmail}`,
-          started_at: new Date().toISOString(),
+          started_at: now,
           expires_at: permanentExpiry,
         }).select('id').single();
         if (error) return reply.status(500).send({ error: error.message });
         await db.from('conversations').update({ status: 'live_agent' }).eq('id', conversationId);
         return { success: true, permanent: true, sessionId: data!.id };
       } else {
+        // Non-permanent: if already in live_agent mode, skip to avoid duplicate sessions
+        if (conv.status === 'live_agent') return { success: true, message: 'Already in live agent mode' };
         await liveAgentService.activate(tenantId, conv.user_id, conversationId, `Admin takeover by ${adminEmail}`);
         return { success: true, permanent: false };
       }

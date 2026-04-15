@@ -2,7 +2,29 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
+## [v0.5.32] - 2026-04-15
+### 🐛 修正：永久接管過幾天後自動恢復為 AI 接管
+
+#### 根本原因
+`/conversations/:id/takeover` API 第 314 行有一個 early return 邏輯：
+```
+if (conv.status === 'live_agent') return { success: true, message: 'Already in live agent mode' };
+```
+場景：客戶先自行輸入「真人」，系統自動建立一個**普通（24小時）**的 `live_agent_sessions` 記錄。此時管理員在後台點「永久接管」按鈕，但因對話的 `status` 已是 `live_agent`，後端直接 early return，**完全沒有插入新的 permanent session（expires_at = 2099）**。
+24小時後，原本的 session 過期，`cleanupExpired` 或 `listConversations` 的 fire-and-forget 偵測到期後將 `conversations.status` 改回 `active`，bot 重新開始回覆客戶，看起來就像「永久接管過幾天後自動失效」。
+
+#### 修復方式
+重寫 `/takeover` endpoint 的邏輯，分兩路：
+- **永久接管（`permanent: true`）**：不論對話目前是什麼狀態，查找所有 `released_at = null` 的 session：
+  - 若已有 permanent session（expires_at ≥ 2099）→ 直接回傳「已是永久接管」，不重複建立
+  - 若有普通 session → 先將其 `released_at` 設為當下（標記已釋放），再插入全新的 permanent session，並確保 `conversations.status = 'live_agent'`
+- **普通接管（`permanent: false`）**：保留原本邏輯，若對話已在 `live_agent` 狀態則跳過
+
+#### 修改檔案
+- `packages/backend/src/routes/admin.routes.ts`：重寫 `POST /conversations/:id/takeover` endpoint
+
 ## [v0.5.31] - 2026-04-10
+
 ### 🐛 修正：客戶訂單查詢完全恢復（Vercel API Route 中繼 + turbo.json 修正）
 
 #### 根本原因（最終確認）
