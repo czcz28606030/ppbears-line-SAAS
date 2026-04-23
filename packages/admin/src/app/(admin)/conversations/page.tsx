@@ -300,7 +300,6 @@ export default function ConversationsPage() {
                 {filteredConversations.map((conv) => (
                   <React.Fragment key={conv.id}>
                     <tr>
-                  <tr key={conv.id}>
                     <td style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
                       {conv.users?.display_name || conv.users?.unified_user_id || '匿名用戶'}
                     </td>
@@ -530,7 +529,7 @@ export default function ConversationsPage() {
 
                   {/* Inline reply panel */}
                   {replyingTo === conv.id && (
-                    <tr key={conv.id + '_reply'} style={{ background: 'rgba(245,158,11,0.04)' }}>
+                    <tr style={{ background: 'rgba(245,158,11,0.04)' }}>
                       <td colSpan={6} style={{ padding: '12px 20px', borderTop: '1px solid rgba(245,158,11,0.15)' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                           {/* 發送身份切換 */}
@@ -608,6 +607,7 @@ export default function ConversationsPage() {
                   )}
                   </React.Fragment>
                 ))}
+              </tbody>
             </table>
           )}
         </div>
