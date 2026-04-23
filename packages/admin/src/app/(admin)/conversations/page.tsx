@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { apiFetch } from '../../../lib/api';
-import { MessageSquare, Eye, Headphones, Bot, Loader2, Plus, X } from 'lucide-react';
+import { MessageSquare, Eye, Headphones, Bot, Loader2, Plus, X, Send, UserCheck, Filter } from 'lucide-react';
 
 interface Conversation {
   id: string;
@@ -21,6 +21,9 @@ export default function ConversationsPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+  const [tagFilter, setTagFilter] = useState('');
+  const [tagFilterOpen, setTagFilterOpen] = useState(false);
+  const tagFilterRef = useRef<HTMLDivElement>(null);
   const [toggling, setToggling] = useState<Record<string, boolean>>({});
 
   async function fetchConversations(silent = false) {
@@ -75,6 +78,23 @@ export default function ConversationsPage() {
   const [tagLoading, setTagLoading] = useState<string | null>(null);
   const tagInputRef = useRef<HTMLInputElement>(null);
   const tagDropdownRef = useRef<HTMLDivElement>(null);
+
+  // ---- Inline reply ----
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [senderType, setSenderType] = useState<'human' | 'ai'>('human');
+  const [replySending, setReplySending] = useState(false);
+
+  // 點擊外部關閉 tag filter 下拉
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (tagFilterRef.current && !tagFilterRef.current.contains(e.target as Node)) {
+        setTagFilterOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   // 載入所有既有標籤（用於下拉選擇）
   useEffect(() => {
@@ -133,6 +153,25 @@ export default function ConversationsPage() {
     finally { setTagLoading(null); }
   }
 
+  async function handleSendReplyInline(convId: string) {
+    if (!replyText.trim() || replySending) return;
+    setReplySending(true);
+    try {
+      await apiFetch(`/api/admin/conversations/${convId}/send`, {
+        method: 'POST',
+        body: JSON.stringify({ content: replyText.trim(), sender_type: senderType }),
+      });
+      setReplyText('');
+      setReplyingTo(null);
+    } catch (err: any) { alert('發送失敗：' + err.message); }
+    finally { setReplySending(false); }
+  }
+
+  // 依標籤篩選（client-side）
+  const filteredConversations = tagFilter
+    ? conversations.filter(c => (c.user_tags || []).some(t => t.tag === tagFilter))
+    : conversations;
+
   const channelEmoji: Record<string, string> = { line: '💬 LINE', messenger: '📘 FB', whatsapp: '💚 WA' };
 
 
@@ -141,12 +180,74 @@ export default function ConversationsPage() {
       <div className="topbar">
         <span className="topbar-title">💬 對話紀錄</span>
         <div className="topbar-right">
+          {/* 狀態篩選 */}
           <select className="form-select" style={{ width: 140 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
             <option value="">全部狀態</option>
             <option value="active">進行中</option>
             <option value="live_agent">真人接管</option>
             <option value="closed">已結束</option>
           </select>
+
+          {/* 標籤篩選（自製深色下拉）*/}
+          <div ref={tagFilterRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setTagFilterOpen(o => !o)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '6px 12px', borderRadius: 8, cursor: 'pointer',
+                border: tagFilter ? '1px solid #6c63ff' : '1px solid rgba(255,255,255,0.12)',
+                background: tagFilter ? 'rgba(108,99,255,0.2)' : '#1a1d35',
+                color: tagFilter ? '#8b85ff' : '#9b9ec8', fontSize: 13,
+                minWidth: 130,
+              }}
+            >
+              <Filter size={13} />
+              <span style={{ flex: 1, textAlign: 'left' }}>{tagFilter || '標籤篩選'}</span>
+              <span style={{ fontSize: 10, opacity: 0.6 }}>▾</span>
+            </button>
+
+            {tagFilterOpen && (
+              <div style={{
+                position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 1000,
+                background: '#13152b', border: '1px solid rgba(108,99,255,0.4)',
+                borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                minWidth: 180, maxHeight: 280, overflowY: 'auto',
+              }}>
+                <div
+                  onClick={() => { setTagFilter(''); setTagFilterOpen(false); }}
+                  style={{
+                    padding: '8px 14px', fontSize: 13, cursor: 'pointer',
+                    color: tagFilter === '' ? '#6c63ff' : '#f0f0ff',
+                    fontWeight: tagFilter === '' ? 700 : 400,
+                    background: tagFilter === '' ? 'rgba(108,99,255,0.15)' : 'transparent',
+                  }}
+                  onMouseEnter={e => { if (tagFilter !== '') e.currentTarget.style.background = '#1f2340'; }}
+                  onMouseLeave={e => { if (tagFilter !== '') e.currentTarget.style.background = 'transparent'; }}
+                >
+                  全部標籤
+                </div>
+                {allTags.map(t => (
+                  <div
+                    key={t}
+                    onClick={() => { setTagFilter(t); setTagFilterOpen(false); }}
+                    style={{
+                      padding: '8px 14px', fontSize: 13, cursor: 'pointer',
+                      color: tagFilter === t ? '#6c63ff' : '#f0f0ff',
+                      fontWeight: tagFilter === t ? 700 : 400,
+                      background: tagFilter === t ? 'rgba(108,99,255,0.15)' : 'transparent',
+                      display: 'flex', alignItems: 'center', gap: 8,
+                    }}
+                    onMouseEnter={e => { if (tagFilter !== t) e.currentTarget.style.background = '#1f2340'; }}
+                    onMouseLeave={e => { if (tagFilter !== t) e.currentTarget.style.background = tagFilter === t ? 'rgba(108,99,255,0.15)' : 'transparent'; }}
+                  >
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#6c63ff', flexShrink: 0 }} />
+                    {t}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="topbar-avatar">A</div>
         </div>
       </div>
@@ -155,18 +256,35 @@ export default function ConversationsPage() {
         <div className="section-header">
           <div>
             <div className="section-title">對話紀錄</div>
-            <div className="section-subtitle">共 {total} 筆對話</div>
+            <div className="section-subtitle">
+              {tagFilter
+                ? `標籤「${tagFilter}」共 ${filteredConversations.length} 筆（全部 ${total} 筆）`
+                : `共 ${total} 筆對話`}
+            </div>
           </div>
+          {tagFilter && (
+            <button
+              onClick={() => setTagFilter('')}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+                borderRadius: 8, border: '1px solid rgba(108,99,255,0.4)', background: 'rgba(108,99,255,0.1)',
+                color: '#8b85ff', cursor: 'pointer', fontSize: 13,
+              }}
+            >
+              <X size={13} /> 清除篩選：{tagFilter}
+            </button>
+          )}
         </div>
 
         <div className="data-table-wrapper">
           {loading ? (
             <div className="loading-center"><div className="loading-spinner" /></div>
-          ) : conversations.length === 0 ? (
+          ) : filteredConversations.length === 0 ? (
             <div className="empty-state">
               <div className="empty-icon"><MessageSquare size={40} /></div>
-              <p>目前沒有對話紀錄</p>
-              <p className="text-xs">完成 LINE 設定後，客戶訊息將顯示於此</p>
+              <p>{tagFilter ? `沒有標籤「${tagFilter}」的對話` : '目前沒有對話紀錄'}</p>
+              {tagFilter && <p className="text-xs">試著選擇其他標籤或清除篩選</p>}
+              {!tagFilter && <p className="text-xs">完成 LINE 設定後，客戶訊息將顯示於此</p>}
             </div>
           ) : (
             <table>
@@ -179,7 +297,9 @@ export default function ConversationsPage() {
                 </tr>
               </thead>
               <tbody>
-                {conversations.map((conv) => (
+                {filteredConversations.map((conv) => (
+                  <React.Fragment key={conv.id}>
+                    <tr>
                   <tr key={conv.id}>
                     <td style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
                       {conv.users?.display_name || conv.users?.unified_user_id || '匿名用戶'}
@@ -316,16 +436,36 @@ export default function ConversationsPage() {
                     </td>
                     <td className="text-sm">{new Date(conv.last_message_at).toLocaleString('zh-TW')}</td>
                     <td>
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                         {/* View button */}
                         <a href={`/conversations/${conv.id}`} className="btn btn-ghost btn-sm">
                           <Eye size={13} /> 查看
                         </a>
 
+                        {/* 回覆按鈕 */}
+                        <button
+                          onClick={() => {
+                            if (replyingTo === conv.id) {
+                              setReplyingTo(null);
+                              setReplyText('');
+                            } else {
+                              setReplyingTo(conv.id);
+                              setReplyText('');
+                            }
+                          }}
+                          style={{
+                            background: replyingTo === conv.id ? 'rgba(245,158,11,0.2)' : 'rgba(245,158,11,0.1)',
+                            border: `1px solid ${replyingTo === conv.id ? '#f59e0b' : 'rgba(245,158,11,0.4)'}`,
+                            color: '#f59e0b', borderRadius: 8, padding: '5px 10px',
+                            cursor: 'pointer', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5,
+                          }}
+                        >
+                          <Send size={12} /> {replyingTo === conv.id ? '收起' : '回覆'}
+                        </button>
+
                         {/* Takeover / Release toggle */}
                         {conv.status === 'active' && (
                           <>
-                            {/* Temporary takeover (24h) */}
                             <button
                               className="btn btn-sm"
                               disabled={toggling[conv.id]}
@@ -344,8 +484,6 @@ export default function ConversationsPage() {
                                 : <Headphones size={12} />}
                               接管
                             </button>
-
-                            {/* Permanent takeover (never expires) */}
                             <button
                               className="btn btn-sm"
                               disabled={toggling[conv.id + '_perm']}
@@ -366,7 +504,6 @@ export default function ConversationsPage() {
                             </button>
                           </>
                         )}
-
 
                         {conv.status === 'live_agent' && (
                           <button
@@ -390,8 +527,87 @@ export default function ConversationsPage() {
                       </div>
                     </td>
                   </tr>
+
+                  {/* Inline reply panel */}
+                  {replyingTo === conv.id && (
+                    <tr key={conv.id + '_reply'} style={{ background: 'rgba(245,158,11,0.04)' }}>
+                      <td colSpan={6} style={{ padding: '12px 20px', borderTop: '1px solid rgba(245,158,11,0.15)' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          {/* 發送身份切換 */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 12, color: '#5a5d82' }}>發送身份：</span>
+                            <button
+                              onClick={() => setSenderType('human')}
+                              style={{
+                                padding: '3px 10px', borderRadius: 100, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: 'none',
+                                background: senderType === 'human' ? '#f59e0b' : 'rgba(245,158,11,0.12)',
+                                color: senderType === 'human' ? '#1a1d35' : '#f59e0b',
+                              }}
+                            >
+                              <UserCheck size={11} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />
+                              人工客服
+                            </button>
+                            <button
+                              onClick={() => setSenderType('ai')}
+                              style={{
+                                padding: '3px 10px', borderRadius: 100, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: 'none',
+                                background: senderType === 'ai' ? '#6c63ff' : 'rgba(108,99,255,0.12)',
+                                color: senderType === 'ai' ? '#fff' : '#8b85ff',
+                              }}
+                            >
+                              <Bot size={11} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />
+                              AI 客服
+                            </button>
+                            <span style={{ fontSize: 11, color: '#5a5d82', marginLeft: 8 }}>
+                              回覆給：{conv.users?.display_name || conv.users?.unified_user_id || '匿名用戶'}
+                              ・{channelEmoji[conv.channel_type] || conv.channel_type}
+                            </span>
+                          </div>
+
+                          {/* 輸入 + 送出 */}
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                            <textarea
+                              autoFocus
+                              value={replyText}
+                              onChange={e => setReplyText(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                                  e.preventDefault();
+                                  handleSendReplyInline(conv.id);
+                                }
+                              }}
+                              placeholder={`以「${senderType === 'human' ? '人工客服' : 'AI 客服'}」身份回覆… (Ctrl+Enter 送出)`}
+                              rows={2}
+                              style={{
+                                flex: 1, padding: '8px 12px', borderRadius: 8, fontSize: 13,
+                                border: `1px solid ${senderType === 'human' ? 'rgba(245,158,11,0.5)' : 'rgba(108,99,255,0.5)'}`,
+                                background: '#13152b', color: '#f0f0ff', resize: 'vertical', lineHeight: 1.5, outline: 'none',
+                              }}
+                            />
+                            <button
+                              onClick={() => handleSendReplyInline(conv.id)}
+                              disabled={!replyText.trim() || replySending}
+                              style={{
+                                padding: '8px 16px', borderRadius: 8, border: 'none', fontWeight: 600, fontSize: 13,
+                                background: senderType === 'human'
+                                  ? (replyText.trim() && !replySending ? '#f59e0b' : '#f59e0b44')
+                                  : (replyText.trim() && !replySending ? '#6c63ff' : '#6c63ff44'),
+                                color: '#fff', cursor: replyText.trim() && !replySending ? 'pointer' : 'not-allowed',
+                                display: 'flex', alignItems: 'center', gap: 6, height: 'fit-content',
+                              }}
+                            >
+                              {replySending
+                                ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                                : <Send size={13} />}
+                              {replySending ? '送出中…' : '送出'}
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 ))}
-              </tbody>
             </table>
           )}
         </div>
