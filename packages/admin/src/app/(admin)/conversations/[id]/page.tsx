@@ -3,14 +3,14 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { apiFetch } from '../../../../lib/api';
-import { ArrowLeft, MessageSquare, User, Clock, Bot, UserCheck, Zap, X, Check, Plus, Tag } from 'lucide-react';
+import { ArrowLeft, MessageSquare, User, Clock, Bot, UserCheck, Zap, X, Check, Plus, Tag, Send } from 'lucide-react';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   created_at: string;
-  metadata_json?: { provider?: string; model?: string };
+  metadata_json?: { provider?: string; model?: string; sender_type?: 'ai' | 'human'; sent_by?: string };
   corrected_at?: string | null;
   corrected_by?: string | null;
 }
@@ -48,6 +48,12 @@ export default function ConversationDetailPage() {
   const [tagLoading, setTagLoading] = useState<string | null>(null);
   const tagPanelRef = useRef<HTMLDivElement>(null);
   const tagInputRef = useRef<HTMLInputElement>(null);
+
+  // ---- Reply ----
+  const [replyText, setReplyText] = useState('');
+  const [senderType, setSenderType] = useState<'human' | 'ai'>('human');
+  const [replySending, setReplySending] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 點擊外部關閉下拉
   useEffect(() => {
@@ -89,6 +95,21 @@ export default function ConversationDetailPage() {
       setUserTags(prev => prev.filter(t => t.tag !== tag));
     } catch (e: any) { alert('刪除標籤失敗：' + e.message); }
     finally { setTagLoading(null); }
+  }
+
+  async function handleSendReply() {
+    if (!replyText.trim() || replySending) return;
+    setReplySending(true);
+    try {
+      const res = await apiFetch<{ success: boolean; message: Message }>(
+        `/api/admin/conversations/${conversationId}/send`,
+        { method: 'POST', body: JSON.stringify({ content: replyText.trim(), sender_type: senderType }) }
+      );
+      setMessages(prev => [...prev, res.message]);
+      setReplyText('');
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+    } catch (e: any) { alert('發送失敗：' + e.message); }
+    finally { setReplySending(false); }
   }
 
   // Knowledge Correction Modal
@@ -351,74 +372,187 @@ export default function ConversationDetailPage() {
                 {messages.length === 0 && (
                   <div className="empty-state"><p>暫無訊息記錄</p></div>
                 )}
-                {messages.map((msg: Message, i: number) => (
-                  <div
-                    key={msg.id}
+                {messages.map((msg: Message, i: number) => {
+                  const isHumanSent = msg.role === 'assistant' && msg.metadata_json?.sender_type === 'human';
+                  const isAiSent = msg.role === 'assistant' && msg.metadata_json?.sender_type !== 'human';
+                  return (
+                    <div
+                      key={msg.id}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                      }}
+                    >
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        marginBottom: 4,
+                        fontSize: 11,
+                        color: 'var(--text-muted)',
+                        flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
+                      }}>
+                        {msg.role === 'user'
+                          ? <User size={11} />
+                          : isHumanSent
+                            ? <UserCheck size={11} style={{ color: '#f59e0b' }} />
+                            : <Bot size={11} />}
+                        <span style={{ color: isHumanSent ? '#f59e0b' : undefined }}>
+                          {msg.role === 'user' ? '客戶' : isHumanSent ? `人工客服` : 'AI 客服'}
+                        </span>
+                        {isHumanSent && msg.metadata_json?.sent_by && (
+                          <span style={{ opacity: 0.6 }}>({msg.metadata_json.sent_by})</span>
+                        )}
+                        <span>·</span>
+                        <span>{new Date(msg.created_at).toLocaleString('zh-TW')}</span>
+                        {isAiSent && msg.metadata_json?.model && (
+                          <span style={{ opacity: 0.6 }}>· {msg.metadata_json.model}</span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, flexDirection: msg.role === 'user' ? 'row-reverse' : 'row' }}>
+                        <div style={{
+                          maxWidth: '600px',
+                          padding: '10px 14px',
+                          borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                          background: msg.role === 'user'
+                            ? '#3b82f622'
+                            : isHumanSent
+                              ? '#f59e0b22'
+                              : '#6b728022',
+                          color: msg.role === 'user'
+                            ? '#60a5fa'
+                            : isHumanSent
+                              ? '#f59e0b'
+                              : 'var(--text-muted)',
+                          border: `1px solid ${msg.role === 'user' ? '#3b82f644' : isHumanSent ? '#f59e0b44' : '#6b728044'}`,
+                          fontSize: 14,
+                          lineHeight: 1.6,
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                        }}>
+                          {msg.content}
+                        </div>
+
+                        {isAiSent && !msg.corrected_at && (
+                          <button
+                            onClick={() => handleOpenCorrection(msg, i)}
+                            title="修正回覆並存入知識庫"
+                            style={{
+                              background: 'none', border: 'none', padding: 6, cursor: 'pointer',
+                              color: 'var(--text-muted)', opacity: 0.6, marginTop: 4,
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                            onMouseLeave={e => e.currentTarget.style.opacity = '0.6'}
+                          >
+                            <Zap size={16} />
+                          </button>
+                        )}
+                        {isAiSent && msg.corrected_at && (
+                          <div
+                            title={`由 ${msg.corrected_by || '管理員'} 於 ${new Date(msg.corrected_at).toLocaleString('zh-TW')} 修正`}
+                            style={{ marginTop: 6, fontSize: 11, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 4, opacity: 0.85 }}
+                          >
+                            <Zap size={10} />
+                            已加入知識庫
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Reply Input */}
+              <div style={{
+                marginTop: 20,
+                paddingTop: 16,
+                borderTop: '1px solid rgba(255,255,255,0.07)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+              }}>
+                {/* Sender type toggle */}
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: '#5a5d82', marginRight: 4 }}>發送身份：</span>
+                  <button
+                    onClick={() => setSenderType('human')}
                     style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                      padding: '4px 12px', borderRadius: 100, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: 'none',
+                      background: senderType === 'human' ? '#f59e0b' : 'rgba(245,158,11,0.12)',
+                      color: senderType === 'human' ? '#1a1d35' : '#f59e0b',
+                      transition: 'all 0.15s',
                     }}
                   >
-                    <div style={{
+                    <UserCheck size={11} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />
+                    人工客服
+                  </button>
+                  <button
+                    onClick={() => setSenderType('ai')}
+                    style={{
+                      padding: '4px 12px', borderRadius: 100, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: 'none',
+                      background: senderType === 'ai' ? '#6c63ff' : 'rgba(108,99,255,0.12)',
+                      color: senderType === 'ai' ? '#fff' : '#8b85ff',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    <Bot size={11} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />
+                    AI 客服
+                  </button>
+                </div>
+
+                {/* Text input + send button */}
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                  <textarea
+                    value={replyText}
+                    onChange={e => setReplyText(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                        e.preventDefault();
+                        handleSendReply();
+                      }
+                    }}
+                    placeholder={`以「${senderType === 'human' ? '人工客服' : 'AI 客服'}」身份回覆客戶… (Ctrl+Enter 送出)`}
+                    rows={3}
+                    style={{
+                      flex: 1,
+                      padding: '10px 14px',
+                      borderRadius: 10,
+                      border: `1px solid ${senderType === 'human' ? 'rgba(245,158,11,0.4)' : 'rgba(108,99,255,0.4)'}`,
+                      background: '#1a1d35',
+                      color: '#f0f0ff',
+                      fontSize: 14,
+                      resize: 'vertical',
+                      lineHeight: 1.5,
+                      outline: 'none',
+                    }}
+                  />
+                  <button
+                    onClick={handleSendReply}
+                    disabled={!replyText.trim() || replySending}
+                    style={{
+                      padding: '10px 18px',
+                      borderRadius: 10,
+                      border: 'none',
+                      background: senderType === 'human'
+                        ? (replyText.trim() && !replySending ? '#f59e0b' : '#f59e0b44')
+                        : (replyText.trim() && !replySending ? '#6c63ff' : '#6c63ff44'),
+                      color: '#fff',
+                      fontWeight: 600,
+                      cursor: replyText.trim() && !replySending ? 'pointer' : 'not-allowed',
                       display: 'flex',
                       alignItems: 'center',
                       gap: 6,
-                      marginBottom: 4,
-                      fontSize: 11,
-                      color: 'var(--text-muted)',
-                      flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
-                    }}>
-                      {msg.role === 'user' ? <User size={11} /> : <Bot size={11} />}
-                      <span>{msg.role === 'user' ? '客戶' : 'AI 客服'}</span>
-                      <span>·</span>
-                      <span>{new Date(msg.created_at).toLocaleString('zh-TW')}</span>
-                      {msg.metadata_json?.model && (
-                        <span style={{ opacity: 0.6 }}>· {msg.metadata_json.model}</span>
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, flexDirection: msg.role === 'user' ? 'row-reverse' : 'row' }}>
-                      <div style={{
-                        maxWidth: '600px',
-                        padding: '10px 14px',
-                        borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                        background: msg.role === 'user' ? '#3b82f622' : '#6b728022',
-                        color: msg.role === 'user' ? '#60a5fa' : 'var(--text-muted)',
-                        border: `1px solid ${msg.role === 'user' ? '#3b82f644' : '#6b728044'}`,
-                        fontSize: 14,
-                        lineHeight: 1.6,
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word',
-                      }}>
-                        {msg.content}
-                      </div>
-
-                      {msg.role === 'assistant' && !msg.corrected_at && (
-                        <button
-                          onClick={() => handleOpenCorrection(msg, i)}
-                          title="修正回覆並存入知識庫"
-                          style={{
-                            background: 'none', border: 'none', padding: 6, cursor: 'pointer',
-                            color: 'var(--text-muted)', opacity: 0.6, marginTop: 4,
-                          }}
-                          onMouseEnter={e => e.currentTarget.style.opacity = '1'}
-                          onMouseLeave={e => e.currentTarget.style.opacity = '0.6'}
-                        >
-                          <Zap size={16} />
-                        </button>
-                      )}
-                      {msg.role === 'assistant' && msg.corrected_at && (
-                        <div
-                          title={`由 ${msg.corrected_by || '管理員'} 於 ${new Date(msg.corrected_at).toLocaleString('zh-TW')} 修正`}
-                          style={{ marginTop: 6, fontSize: 11, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 4, opacity: 0.85 }}
-                        >
-                          <Zap size={10} />
-                          已加入知識庫
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                      fontSize: 14,
+                      transition: 'all 0.15s',
+                      height: 'fit-content',
+                    }}
+                  >
+                    <Send size={15} />
+                    {replySending ? '送出中…' : '送出'}
+                  </button>
+                </div>
               </div>
             </div>
           </>

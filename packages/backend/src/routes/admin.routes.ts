@@ -12,6 +12,8 @@ import { broadcastService } from '../modules/broadcast/broadcast.service.js';
 import { handleOrderQuery } from '../modules/orders/order-query.service.js';
 import { quickOrderService } from '../modules/orders/quick-order.service.js';
 import { wooRequest } from '../utils/woo-request.js';
+import { channelRegistry } from '../channels/channel.registry.js';
+import { ChannelType } from '../types/index.js';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 
@@ -269,6 +271,71 @@ export async function adminRoutes(app: FastifyInstance) {
       ]);
 
       return { conversation: conversation.data, messages: messages.data || [] };
+    });
+
+    // Admin: send a message to the customer in a conversation
+    protectedApp.post<{ Params: { id: string } }>('/conversations/:id/send', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      const tenantId = (request as any).jwtUser.tenantId;
+      const adminEmail = (request as any).jwtUser.email;
+      const { id: conversationId } = request.params;
+      const { content, sender_type = 'human' } = (request.body as any) || {};
+
+      if (!content?.trim()) return reply.status(400).send({ error: '訊息內容不可為空' });
+      if (!['ai', 'human'].includes(sender_type)) return reply.status(400).send({ error: 'sender_type 必須為 ai 或 human' });
+
+      const db = getSupabaseAdmin();
+
+      // Verify conversation belongs to tenant and get channel info
+      const { data: conv } = await db
+        .from('conversations')
+        .select('user_id, channel_type')
+        .eq('id', conversationId)
+        .eq('tenant_id', tenantId)
+        .single();
+
+      if (!conv) return reply.status(404).send({ error: 'Conversation not found' });
+
+      // Get platform_user_id from channel_identities
+      const { data: identity } = await db
+        .from('channel_identities')
+        .select('platform_user_id')
+        .eq('tenant_id', tenantId)
+        .eq('user_id', conv.user_id)
+        .eq('channel_type', conv.channel_type)
+        .single();
+
+      if (!identity) return reply.status(404).send({ error: 'Channel identity not found for this user' });
+
+      // Send via the appropriate channel adapter
+      const adapter = channelRegistry.get(conv.channel_type as ChannelType);
+      if (!adapter) return reply.status(400).send({ error: `Unsupported channel: ${conv.channel_type}` });
+
+      try {
+        await adapter.sendReply(tenantId, identity.platform_user_id, [{ type: 'text', content: content.trim() }]);
+      } catch (err: any) {
+        log.error({ conversationId, channel: conv.channel_type, err: err.message }, 'Failed to send message via channel');
+        return reply.status(502).send({ error: `Channel send failed: ${err.message}` });
+      }
+
+      // Persist message in DB
+      const { data: saved, error: saveErr } = await db.from('messages').insert({
+        conversation_id: conversationId,
+        tenant_id: tenantId,
+        role: 'assistant',
+        content: content.trim(),
+        metadata_json: {
+          sender_type,          // 'ai' | 'human'
+          sent_by: adminEmail,  // admin email for audit
+        },
+        created_at: new Date().toISOString(),
+      }).select('*').single();
+
+      if (saveErr) return reply.status(500).send({ error: saveErr.message });
+
+      // Update conversation last_message_at
+      await db.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', conversationId);
+
+      return { success: true, message: saved };
     });
 
     // Mark a message as corrected and saved to knowledge base
