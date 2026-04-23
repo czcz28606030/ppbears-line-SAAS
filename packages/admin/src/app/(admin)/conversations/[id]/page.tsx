@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { apiFetch } from '../../../../lib/api';
-import { ArrowLeft, MessageSquare, User, Clock, Bot, UserCheck, Zap, X, Check } from 'lucide-react';
+import { ArrowLeft, MessageSquare, User, Clock, Bot, UserCheck, Zap, X, Check, Plus, Tag } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -17,6 +17,7 @@ interface Message {
 
 interface ConversationDetail {
   id: string;
+  user_id: string;
   channel_type: string;
   status: string;
   started_at: string;
@@ -38,6 +39,57 @@ export default function ConversationDetailPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // ---- Tag management ----
+  const [userTags, setUserTags] = useState<{ tag: string; source: string }[]>([]);
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState('');
+  const [tagDropdownOpen, setTagDropdownOpen] = useState(false);
+  const [tagLoading, setTagLoading] = useState<string | null>(null);
+  const tagPanelRef = useRef<HTMLDivElement>(null);
+  const tagInputRef = useRef<HTMLInputElement>(null);
+
+  // 點擊外部關閉下拉
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (tagPanelRef.current && !tagPanelRef.current.contains(e.target as Node)) {
+        setTagDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  async function loadUserTags(userId: string) {
+    try {
+      const res = await apiFetch<{ tags: { tag: string; source: string }[] }>(`/api/admin/users/${userId}/tags`);
+      setUserTags(res.tags);
+    } catch {}
+  }
+
+  async function handleAddTag(tag: string) {
+    if (!conv?.user_id || !tag.trim()) return;
+    if (userTags.some(t => t.tag === tag)) { setTagInput(''); setTagDropdownOpen(false); return; }
+    setTagLoading('add');
+    try {
+      await apiFetch(`/api/admin/users/${conv.user_id}/tags`, { method: 'POST', body: JSON.stringify({ tag: tag.trim() }) });
+      setUserTags(prev => [...prev, { tag: tag.trim(), source: 'manual' }]);
+      setAllTags(prev => prev.includes(tag.trim()) ? prev : [...prev, tag.trim()].sort());
+      setTagInput('');
+      setTagDropdownOpen(false);
+    } catch (e: any) { alert('新增標籤失敗：' + e.message); }
+    finally { setTagLoading(null); }
+  }
+
+  async function handleRemoveTag(tag: string) {
+    if (!conv?.user_id) return;
+    setTagLoading(tag);
+    try {
+      await apiFetch(`/api/admin/users/${conv.user_id}/tags/${encodeURIComponent(tag)}`, { method: 'DELETE' });
+      setUserTags(prev => prev.filter(t => t.tag !== tag));
+    } catch (e: any) { alert('刪除標籤失敗：' + e.message); }
+    finally { setTagLoading(null); }
+  }
 
   // Knowledge Correction Modal
   const [correctionTarget, setCorrectionTarget] = useState<{ userMsg: string; aiMsg: string; timestamp: string; messageId?: string } | null>(null);
@@ -65,6 +117,15 @@ export default function ConversationDetailPage() {
       return () => clearInterval(interval);
     }
   }, [conversationId]);
+
+  // 載入標籤：在 conv 載入完成後才執行
+  useEffect(() => {
+    if (!conv?.user_id) return;
+    loadUserTags(conv.user_id);
+    apiFetch<{ tags: string[] }>('/api/admin/tags')
+      .then(res => setAllTags(res.tags))
+      .catch(() => {});
+  }, [conv?.user_id]);
 
   const statusBadge: Record<string, string> = { active: 'badge-success', live_agent: 'badge-live', closed: 'badge-muted' };
   const statusLabel: Record<string, string> = { active: '進行中', live_agent: '真人接管', closed: '已結束' };
@@ -183,6 +244,99 @@ export default function ConversationDetailPage() {
                 <div>
                   <div className="text-xs" style={{ color: 'var(--text-muted)', marginBottom: 4 }}>最後訊息</div>
                   <div style={{ fontSize: 13 }}>{new Date(conv.last_message_at).toLocaleString('zh-TW')}</div>
+                </div>
+
+                {/* Tag editor */}
+                <div style={{ flex: 1, minWidth: 220 }}>
+                  <div className="text-xs" style={{ color: 'var(--text-muted)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Tag size={11} /> 客戶標籤
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                    {userTags.map(t => (
+                      <span key={t.tag} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                        padding: '3px 10px', borderRadius: 100, fontSize: 12, fontWeight: 600,
+                        background: t.source === 'manual' ? '#6366f1' : '#10b981',
+                        color: '#fff',
+                      }}>
+                        {t.tag}
+                        <button
+                          onClick={() => handleRemoveTag(t.tag)}
+                          disabled={tagLoading === t.tag}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#fff', opacity: 0.7, display: 'flex', lineHeight: 1 }}
+                        >
+                          {tagLoading === t.tag
+                            ? <span style={{ fontSize: 10 }}>...</span>
+                            : <X size={11} />}
+                        </button>
+                      </span>
+                    ))}
+
+                    {/* Add tag button + dropdown */}
+                    <div ref={tagPanelRef} style={{ position: 'relative' }}>
+                      {tagDropdownOpen ? (
+                        <form onSubmit={e => { e.preventDefault(); handleAddTag(tagInput); }} style={{ display: 'flex', gap: 4 }}>
+                          <input
+                            ref={tagInputRef}
+                            autoFocus
+                            value={tagInput}
+                            onChange={e => setTagInput(e.target.value)}
+                            placeholder="搜尋或輸入新標籤…"
+                            style={{
+                              width: 150, padding: '3px 8px', borderRadius: 6, fontSize: 12,
+                              border: '1px solid rgba(108,99,255,0.5)', background: '#1a1d35', color: '#f0f0ff',
+                            }}
+                          />
+                          <button type="submit" disabled={!tagInput.trim() || tagLoading === 'add'}
+                            style={{ background: '#6c63ff', border: 'none', borderRadius: 6, color: '#fff', padding: '3px 10px', cursor: 'pointer', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 3 }}
+                          >
+                            <Plus size={11} /> 新增
+                          </button>
+                        </form>
+                      ) : (
+                        <button
+                          onClick={() => { setTagDropdownOpen(true); setTimeout(() => tagInputRef.current?.focus(), 50); }}
+                          style={{
+                            background: 'rgba(108,99,255,0.15)', border: '1px dashed rgba(108,99,255,0.5)',
+                            borderRadius: 100, color: '#8b85ff', padding: '3px 10px',
+                            cursor: 'pointer', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4,
+                          }}
+                        >
+                          <Plus size={11} /> 加標籤
+                        </button>
+                      )}
+
+                      {/* Existing tags dropdown */}
+                      {tagDropdownOpen && (() => {
+                        const currentSet = new Set(userTags.map(t => t.tag));
+                        const filtered = allTags.filter(t =>
+                          !currentSet.has(t) &&
+                          (tagInput === '' || t.toLowerCase().includes(tagInput.toLowerCase()))
+                        );
+                        if (!filtered.length) return null;
+                        return (
+                          <div style={{
+                            position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 999,
+                            background: '#13152b', border: '1px solid rgba(108,99,255,0.4)',
+                            borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                            minWidth: 170, maxHeight: 220, overflowY: 'auto',
+                          }}>
+                            <div style={{ padding: '6px 10px', fontSize: 10, color: '#5a5d82', fontWeight: 600, letterSpacing: 1 }}>選擇既有標籤</div>
+                            {filtered.map(t => (
+                              <div key={t} onClick={() => handleAddTag(t)}
+                                style={{ padding: '7px 12px', fontSize: 13, cursor: 'pointer', color: '#f0f0ff', display: 'flex', alignItems: 'center', gap: 6 }}
+                                onMouseEnter={e => e.currentTarget.style.background = '#1f2340'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                              >
+                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#6c63ff', flexShrink: 0 }} />
+                                {t}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

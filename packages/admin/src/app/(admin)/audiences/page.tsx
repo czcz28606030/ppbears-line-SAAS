@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { apiFetch } from '../../../lib/api';
 import { Tags, UserCircle, Plus, Trash2, Search, RefreshCw, Zap, X, Check } from 'lucide-react';
 import Link from 'next/link';
@@ -27,6 +27,8 @@ interface MessageRow {
 export default function AudiencesPage() {
   const [allTags, setAllTags] = useState<string[]>([]);
   const [selectedTag, setSelectedTag] = useState('');
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const [users, setUsers] = useState<UserRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -77,6 +79,17 @@ export default function AudiencesPage() {
   useEffect(() => {
     loadUsers();
   }, [loadUsers]);
+
+  // 點擊外部關閉下拉
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   const handleExpandUser = async (userId: string) => {
     if (expandedUser === userId) {
@@ -198,24 +211,58 @@ export default function AudiencesPage() {
         style={{ padding: '16px 20px', marginBottom: 20, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}
       >
         <Search size={16} style={{ color: 'var(--text-muted)' }} />
-        <select
-          value={selectedTag}
-          onChange={(e) => setSelectedTag(e.target.value)}
-          style={{
-            flex: 1, minWidth: 200, padding: '8px 12px', borderRadius: 8,
-            border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)',
-            fontSize: 14,
-          }}
-        >
-          <option value="" style={{ background: 'var(--surface)', color: 'var(--text)' }}>
-            — 所有標籤（顯示全部用戶）—
-          </option>
-          {allTags.map((t) => (
-            <option key={t} value={t} style={{ background: 'var(--surface)', color: 'var(--text)' }}>
-              {t}
-            </option>
-          ))}
-        </select>
+        {/* 自製深色下拉清單（原生 select 無法套用深色樣式） */}
+        <div ref={dropdownRef} style={{ flex: 1, minWidth: 200, position: 'relative' }}>
+          <button
+            onClick={() => setDropdownOpen((o) => !o)}
+            style={{
+              width: '100%', padding: '8px 12px', borderRadius: 8, textAlign: 'left',
+              border: '1px solid rgba(255,255,255,0.1)', background: '#1a1d35', color: '#f0f0ff',
+              fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}
+          >
+            <span>{selectedTag || '— 所有標籤（顯示全部用戶）—'}</span>
+            <span style={{ fontSize: 10, opacity: 0.6, marginLeft: 8 }}>{dropdownOpen ? '▲' : '▼'}</span>
+          </button>
+          {dropdownOpen && (
+            <div
+              style={{
+                position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 999,
+                background: '#13152b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8,
+                boxShadow: '0 8px 24px rgba(0,0,0,0.6)', maxHeight: 320, overflowY: 'auto',
+              }}
+            >
+              {/* 「所有標籤」選項 */}
+              <div
+                onClick={() => { setSelectedTag(''); setDropdownOpen(false); }}
+                style={{
+                  padding: '9px 14px', fontSize: 14, cursor: 'pointer',
+                  background: selectedTag === '' ? '#6c63ff' : '#13152b',
+                  color: '#f0f0ff',
+                }}
+                onMouseEnter={(e) => { if (selectedTag !== '') e.currentTarget.style.background = '#1f2340'; }}
+                onMouseLeave={(e) => { if (selectedTag !== '') e.currentTarget.style.background = '#13152b'; }}
+              >
+                — 所有標籤（顯示全部用戶）—
+              </div>
+              {allTags.map((t) => (
+                <div
+                  key={t}
+                  onClick={() => { setSelectedTag(t); setDropdownOpen(false); }}
+                  style={{
+                    padding: '9px 14px', fontSize: 14, cursor: 'pointer',
+                    background: selectedTag === t ? '#6c63ff' : '#13152b',
+                    color: '#f0f0ff',
+                  }}
+                  onMouseEnter={(e) => { if (selectedTag !== t) e.currentTarget.style.background = '#1f2340'; }}
+                  onMouseLeave={(e) => { if (selectedTag !== t) e.currentTarget.style.background = '#13152b'; }}
+                >
+                  {t}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <button
           onClick={loadUsers}
@@ -298,7 +345,7 @@ export default function AudiencesPage() {
                       key={tag}
                       style={{
                         padding: '3px 10px', borderRadius: 100, fontSize: 11, fontWeight: 600,
-                        background: 'var(--accent)22', color: 'var(--accent)', border: '1px solid var(--accent)44',
+                        background: 'var(--accent)', color: '#fff', border: '1px solid var(--accent)',
                       }}
                     >
                       {tag}
@@ -383,9 +430,9 @@ export default function AudiencesPage() {
                         style={{
                           display: 'flex', alignItems: 'center', gap: 4,
                           padding: '4px 10px', borderRadius: 100, fontSize: 12,
-                          background: t.source === 'manual' ? '#6366f122' : '#10b98122',
-                          color: t.source === 'manual' ? '#6366f1' : '#10b981',
-                          border: `1px solid ${t.source === 'manual' ? '#6366f144' : '#10b98144'}`,
+                          background: t.source === 'manual' ? '#6366f1' : '#10b981',
+                          color: '#fff',
+                          border: `1px solid ${t.source === 'manual' ? '#6366f1' : '#10b981'}`,
                         }}
                       >
                         {t.tag}

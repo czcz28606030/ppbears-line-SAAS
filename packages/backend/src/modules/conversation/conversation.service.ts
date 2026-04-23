@@ -152,11 +152,27 @@ export class ConversationService {
       }
     }
 
-    const enriched = conversations.map(c => ({
+    // Batch-fetch user tags for all conversations (single query, no N+1)
+    const userIds = [...new Set(conversations.map((c: any) => c.user_id).filter(Boolean))];
+    const tagsByUser: Record<string, { tag: string; source: string }[]> = {};
+    if (userIds.length > 0) {
+      const { data: allTags } = await db
+        .from('user_tags')
+        .select('user_id, tag, source')
+        .eq('tenant_id', tenantId)
+        .in('user_id', userIds as string[]);
+      for (const t of allTags || []) {
+        if (!tagsByUser[t.user_id]) tagsByUser[t.user_id] = [];
+        tagsByUser[t.user_id].push({ tag: t.tag, source: t.source });
+      }
+    }
+
+    const enriched = conversations.map((c: any) => ({
       ...c,
       // Override status to 'active' for expired sessions so UI reflects reality
       status: expiredConvIds.includes(c.id) ? 'active' : c.status,
       is_permanent: permanentSet.has(c.id),
+      user_tags: tagsByUser[c.user_id] || [],
     }));
 
     return { conversations: enriched, total: count || 0 };

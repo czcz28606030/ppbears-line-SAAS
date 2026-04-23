@@ -1,17 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { apiFetch } from '../../../lib/api';
-import { MessageSquare, Eye, Headphones, Bot, Loader2 } from 'lucide-react';
+import { MessageSquare, Eye, Headphones, Bot, Loader2, Plus, X } from 'lucide-react';
 
 interface Conversation {
   id: string;
+  user_id: string;
   channel_type: string;
   status: string;
   is_permanent?: boolean;
   last_message_at: string;
   started_at: string;
   users?: { display_name: string; unified_user_id: string };
+  user_tags?: { tag: string; source: string }[];
 }
 
 export default function ConversationsPage() {
@@ -66,6 +68,71 @@ export default function ConversationsPage() {
     finally { setToggling(t => ({ ...t, [convId]: false })); }
   }
 
+  // ---- Tag management ----
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [editingTagsFor, setEditingTagsFor] = useState<string | null>(null);
+  const [newTagInput, setNewTagInput] = useState('');
+  const [tagLoading, setTagLoading] = useState<string | null>(null);
+  const tagInputRef = useRef<HTMLInputElement>(null);
+  const tagDropdownRef = useRef<HTMLDivElement>(null);
+
+  // 載入所有既有標籤（用於下拉選擇）
+  useEffect(() => {
+    apiFetch<{ tags: string[] }>('/api/admin/tags')
+      .then(res => setAllTags(res.tags))
+      .catch(() => {});
+  }, []);
+
+  // 點擊外部關閉標籤下拉
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (tagDropdownRef.current && !tagDropdownRef.current.contains(e.target as Node)) {
+        setEditingTagsFor(null);
+        setNewTagInput('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  async function handleAddTag(convId: string, userId: string, tagOverride?: string) {
+    const tag = (tagOverride ?? newTagInput).trim();
+    if (!tag) return;
+    // 不重複加
+    const conv = conversations.find(c => c.id === convId);
+    if (conv?.user_tags?.some(t => t.tag === tag)) {
+      setNewTagInput('');
+      return;
+    }
+    setTagLoading(convId);
+    try {
+      await apiFetch(`/api/admin/users/${userId}/tags`, { method: 'POST', body: JSON.stringify({ tag }) });
+      setConversations(prev => prev.map(c =>
+        c.id === convId
+          ? { ...c, user_tags: [...(c.user_tags || []), { tag, source: 'manual' }] }
+          : c
+      ));
+      // 若是新標籤，加入全域清單
+      setAllTags(prev => prev.includes(tag) ? prev : [...prev, tag].sort());
+      setNewTagInput('');
+      if (!tagOverride) setEditingTagsFor(null);
+    } catch (err: any) { alert('新增標籤失敗：' + err.message); }
+    finally { setTagLoading(null); }
+  }
+
+  async function handleRemoveTag(convId: string, userId: string, tag: string) {
+    setTagLoading(convId + tag);
+    try {
+      await apiFetch(`/api/admin/users/${userId}/tags/${encodeURIComponent(tag)}`, { method: 'DELETE' });
+      setConversations(prev => prev.map(c =>
+        c.id === convId
+          ? { ...c, user_tags: (c.user_tags || []).filter(t => t.tag !== tag) }
+          : c
+      ));
+    } catch (err: any) { alert('刪除標籤失敗：' + err.message); }
+    finally { setTagLoading(null); }
+  }
+
   const channelEmoji: Record<string, string> = { line: '💬 LINE', messenger: '📘 FB', whatsapp: '💚 WA' };
 
 
@@ -107,8 +174,7 @@ export default function ConversationsPage() {
                 <tr>
                   <th>用戶</th>
                   <th>通路</th>
-                  <th>狀態</th>
-                  <th>最後訊息</th>
+                  <th>狀態</th>                  <th>標籤</th>                  <th>最後訊息</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -147,6 +213,107 @@ export default function ConversationsPage() {
                       )}
                     </td>
 
+                    {/* Tags cell */}
+                    <td style={{ minWidth: 160, maxWidth: 260 }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                        {(conv.user_tags || []).map((t) => (
+                          <span
+                            key={t.tag}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 3,
+                              padding: '2px 8px', borderRadius: 100, fontSize: 11, fontWeight: 600,
+                              background: t.source === 'manual' ? '#6366f1' : '#10b981',
+                              color: '#fff',
+                            }}
+                          >
+                            {t.tag}
+                            <button
+                              onClick={() => handleRemoveTag(conv.id, conv.user_id, t.tag)}
+                              disabled={tagLoading === conv.id + t.tag}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#fff', opacity: 0.7, display: 'flex', lineHeight: 1 }}
+                            >
+                              {tagLoading === conv.id + t.tag
+                                ? <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} />
+                                : <X size={10} />}
+                            </button>
+                          </span>
+                        ))}
+                        {editingTagsFor === conv.id ? (
+                          <div ref={tagDropdownRef} style={{ position: 'relative' }}>
+                            {/* 搜尋 / 輸入框 */}
+                            <form
+                              onSubmit={(e) => { e.preventDefault(); handleAddTag(conv.id, conv.user_id); }}
+                              style={{ display: 'flex', gap: 4 }}
+                            >
+                              <input
+                                ref={tagInputRef}
+                                autoFocus
+                                value={newTagInput}
+                                onChange={(e) => setNewTagInput(e.target.value)}
+                                placeholder="搜尋或輸入新標籤…"
+                                style={{
+                                  width: 140, padding: '3px 8px', borderRadius: 6, fontSize: 11,
+                                  border: '1px solid rgba(108,99,255,0.5)', background: '#1a1d35', color: '#f0f0ff',
+                                }}
+                              />
+                              <button type="submit" disabled={!newTagInput.trim() || tagLoading === conv.id}
+                                style={{ background: '#6c63ff', border: 'none', borderRadius: 6, color: '#fff', padding: '3px 8px', cursor: 'pointer', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 3 }}
+                              >
+                                {tagLoading === conv.id ? <Loader2 size={10} style={{ animation: 'spin 1s linear infinite' }} /> : <Plus size={10} />}
+                                新增
+                              </button>
+                            </form>
+
+                            {/* 下拉：既有標籤（過濾已套用 + 依輸入篩選）*/}
+                            {(() => {
+                              const currentTags = new Set((conv.user_tags || []).map(t => t.tag));
+                              const filtered = allTags.filter(t =>
+                                !currentTags.has(t) &&
+                                (newTagInput === '' || t.toLowerCase().includes(newTagInput.toLowerCase()))
+                              );
+                              if (filtered.length === 0) return null;
+                              return (
+                                <div style={{
+                                  position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 999,
+                                  background: '#13152b', border: '1px solid rgba(108,99,255,0.4)',
+                                  borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                                  minWidth: 160, maxHeight: 200, overflowY: 'auto',
+                                }}>
+                                  <div style={{ padding: '6px 10px', fontSize: 10, color: '#5a5d82', fontWeight: 600, letterSpacing: 1 }}>選擇既有標籤</div>
+                                  {filtered.map(t => (
+                                    <div
+                                      key={t}
+                                      onClick={() => handleAddTag(conv.id, conv.user_id, t)}
+                                      style={{
+                                        padding: '7px 12px', fontSize: 12, cursor: 'pointer',
+                                        color: '#f0f0ff', display: 'flex', alignItems: 'center', gap: 6,
+                                      }}
+                                      onMouseEnter={e => e.currentTarget.style.background = '#1f2340'}
+                                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#6c63ff', flexShrink: 0 }} />
+                                      {t}
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => { setEditingTagsFor(conv.id); setNewTagInput(''); }}
+                            title="新增標籤"
+                            style={{
+                              background: 'rgba(108,99,255,0.2)', border: '1px dashed rgba(108,99,255,0.5)',
+                              borderRadius: 100, color: '#8b85ff', padding: '2px 6px',
+                              cursor: 'pointer', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 3,
+                            }}
+                          >
+                            <Plus size={10} /> 標籤
+                          </button>
+                        )}
+                      </div>
+                    </td>
                     <td className="text-sm">{new Date(conv.last_message_at).toLocaleString('zh-TW')}</td>
                     <td>
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>

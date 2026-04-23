@@ -6,11 +6,18 @@ const log = createLogger({ module: 'TaggingService' });
 /**
  * Normalizes a raw phone model string into a tag-safe slug.
  * e.g. "iPhone 16 Pro Max" → "phone:iphone-16-pro-max"
+ * e.g. "iphone16promax"   → "phone:iphone-16-pro-max"
  */
 function normalizeModelTag(raw: string): string {
   return 'phone:' + raw
     .toLowerCase()
+    // Expand fused suffix combos before splitting on spaces
+    .replace(/pro\s*max/g, 'pro-max')
+    .replace(/pro\s*plus/g, 'pro-plus')
     .replace(/\s+/g, '-')
+    // Insert dash at digit→letter and letter→digit boundaries (e.g. "12pro" → "12-pro")
+    .replace(/(\d)([a-z])/g, '$1-$2')
+    .replace(/([a-z])(\d)/g, '$1-$2')
     .replace(/[^\w:-]/g, '')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
@@ -21,6 +28,8 @@ function normalizeModelTag(raw: string): string {
  * Strips any redundant brand word already in `raw` to avoid duplication.
  * e.g. brand="samsung", raw="S25 Ultra" → "phone:samsung-s25-ultra"
  * e.g. brand="iphone",  raw="iPhone 16 Pro" → "phone:iphone-16-pro"
+ * e.g. brand="iphone",  raw="iphone12PRO"  → "phone:iphone-12-pro"  (digit-letter boundary)
+ * e.g. brand="iphone",  raw="12PRO"        → "phone:iphone-12-pro"  (bare number, same result)
  */
 function normalizeModelTagWithBrand(brand: string, raw: string): string {
   const BRAND_PREFIXES =
@@ -28,7 +37,14 @@ function normalizeModelTagWithBrand(brand: string, raw: string): string {
   const modelSlug = raw
     .toLowerCase()
     .replace(BRAND_PREFIXES, '')
+    // Expand fused suffix combos BEFORE splitting on spaces
+    .replace(/pro\s*max/g, 'pro-max')
+    .replace(/pro\s*plus/g, 'pro-plus')
     .replace(/\s+/g, '-')
+    // Insert dash at digit→letter and letter→digit boundaries
+    // "12pro" → "12-pro", "s25ultra" → "s-25-ultra" (catches bare Samsung too)
+    .replace(/(\d)([a-z])/g, '$1-$2')
+    .replace(/([a-z])(\d)/g, '$1-$2')
     .replace(/[^\w-]/g, '')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
@@ -52,10 +68,14 @@ function normalizeChineseBrand(raw: string): string {
     .replace(/華碩/gi, 'asus ')
     .replace(/谷歌|pixel/gi, 'pixel ')
     .replace(/索尼/gi, 'xperia ')
-    // Common abbreviation expansions
+    // iPhone abbreviation: "I13" / "i14" / "I15PRO" → "iphone 13" / "iphone 14" / "iphone 15PRO"
+    // \b ensures we don't match "wifi13" or the "i" inside "xiaomi"
+    .replace(/\b[iI](\d{1,2})/g, 'iphone $1')
+    // Common suffix abbreviation expansions (standalone only, via \b)
+    .replace(/\bPM\b/gi, ' pro max')   // PM before P to avoid double-expansion
+    .replace(/\bPMX\b/gi, ' pro max')
     .replace(/\bU\b/gi, ' ultra')
     .replace(/\bP\b/gi, ' pro')
-    .replace(/\bPM\b/gi, ' pro max')
     .replace(/\s+/g, ' ')
     .trim();
 }
