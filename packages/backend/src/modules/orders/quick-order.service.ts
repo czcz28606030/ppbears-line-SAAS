@@ -34,7 +34,49 @@ interface QuickOrderSettings {
   consumerSecret: string;
 }
 
+type QuickOrderRequestTarget = {
+  url: string;
+  headers: Record<string, string>;
+  route: 'proxy' | 'direct';
+};
+
 export class QuickOrderService {
+  /** Build Woo request URL and headers, optionally routing via Hostinger proxy. */
+  private buildRequestTarget(
+    settings: QuickOrderSettings,
+    apiPath: string,
+    extraParams: Record<string, string> = {},
+  ): QuickOrderRequestTarget {
+    const { wooBaseUrl, consumerKey, consumerSecret } = settings;
+    const proxyUrl = process.env.WOO_PROXY_URL;
+    const proxySecret = process.env.WOO_PROXY_SECRET;
+
+    const query = new URLSearchParams({
+      consumer_key: consumerKey,
+      consumer_secret: consumerSecret,
+      ...extraParams,
+    });
+
+    if (proxyUrl && proxySecret) {
+      const proxyQuery = new URLSearchParams({
+        path: apiPath,
+        ...Object.fromEntries(query.entries()),
+      });
+      return {
+        url: `${proxyUrl}?${proxyQuery.toString()}`,
+        headers: { 'X-Proxy-Secret': proxySecret },
+        route: 'proxy',
+      };
+    }
+
+    const base = wooBaseUrl.replace(/\/$/, '');
+    return {
+      url: `${base}/wp-json/wc/v3/${apiPath}?${query.toString()}`,
+      headers: {},
+      route: 'direct',
+    };
+  }
+
   /** Load quick order settings from tenant_settings. */
   private async getSettings(tenantId: string): Promise<QuickOrderSettings | null> {
     const db = getSupabaseAdmin();
@@ -102,15 +144,14 @@ export class QuickOrderService {
     name: string,
     amount: string,
   ): Promise<{ productId: number; permalink: string } | null> {
-    const { wooBaseUrl, consumerKey, consumerSecret, templateProductId } = settings;
-    const base = wooBaseUrl.replace(/\/$/, '');
-    const auth = `consumer_key=${consumerKey}&consumer_secret=${consumerSecret}`;
+    const { templateProductId } = settings;
 
     // Step 1: Fetch template product settings to copy (optional but recommended)
     let templateFields: Record<string, any> = {};
     if (templateProductId) {
       try {
-        const tRes = await wooRequest(`${base}/wp-json/wc/v3/products/${templateProductId}?${auth}`);
+        const tTarget = this.buildRequestTarget(settings, `products/${templateProductId}`);
+        const tRes = await wooRequest(tTarget.url, { headers: tTarget.headers });
         if (tRes.ok) {
           const t = await tRes.json() as Record<string, any>;
           templateFields = {
@@ -145,22 +186,34 @@ export class QuickOrderService {
     };
 
     try {
-      const res = await wooRequest(`${base}/wp-json/wc/v3/products?${auth}`, {
+      const createTarget = this.buildRequestTarget(settings, 'products');
+      const res = await wooRequest(createTarget.url, {
         method: 'POST',
+        headers: createTarget.headers,
         body: JSON.stringify(productPayload),
       });
 
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
-        log.error({ status: res.status, errText }, 'WooCommerce product creation failed');
+        log.error(
+          {
+            status: res.status,
+            errText: errText.slice(0, 400),
+            route: createTarget.route,
+          },
+          'WooCommerce product creation failed',
+        );
         return null;
       }
 
       const product = await res.json() as { id: number; permalink: string };
-      log.info({ productId: product.id, permalink: product.permalink, name, amount }, 'Quick order product created');
+      log.info(
+        { productId: product.id, permalink: product.permalink, name, amount, route: createTarget.route },
+        'Quick order product created',
+      );
       return { productId: product.id, permalink: product.permalink };
     } catch (err: any) {
-      log.error({ err: err.message }, 'QuickOrder WC product API error');
+      log.error({ err: err.message, code: err.code || '', syscall: err.syscall || '' }, 'QuickOrder WC product API error');
       return null;
     }
   }
