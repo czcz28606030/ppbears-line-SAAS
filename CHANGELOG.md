@@ -2,10 +2,18 @@
 
 本檔案將記錄此專案所有值得注意的更新與變動。
 
+## [v0.5.39] - 2026-04-26
+### 🐛 修正：快速開單 100% 失敗（Vercel Relay 缺少 POST Handler）
+
+- **根本原因**：v0.5.38 為快速開單加入 Proxy 路由支援後，POST 請求（建立 WooCommerce 商品）開始經由 Vercel `/api/woo-relay` 中繼。但 `route.ts` **只匯出 `GET` handler**，Vercel 對 POST 請求直接回傳 405 Method Not Allowed，後端收到 `res.ok = false`，進入 `return null` 分支，最終顯示「⚠️ 開單失敗」通用錯誤訊息。
+- **為何昨天能用**：v0.5.38 部署前，快速開單走直連路由（不經 Proxy），不受此限制。部署後 `WOO_PROXY_URL` 環境變數已設定，POST 開始走 Proxy 路由。
+- **修復方式**：將 `woo-relay/route.ts` 重構為共用 `relay()` 函式，同時匯出 `GET`、`POST`、`PUT`、`DELETE` handler。POST/PUT 請求會正確讀取 `request.text()` body 並附帶 `Content-Type: application/json` 轉發至 WooCommerce。
+
 ## [v0.5.38] - 2026-04-26
 ### 🐛 修正：快速開單偶發失敗（雲端連線路由不一致）
 - **根本原因**：快速開單流程在 `quick-order.service.ts` 只使用 WooCommerce 直連路徑，未對齊訂單查詢已支援的 Proxy 路由。當雲端環境出現防火牆或出站網路波動時，會偶發開單失敗，但前台僅顯示通用的 API Key 提示，造成誤判。
 - **修復方式**：快速開單新增 `WOO_PROXY_URL` / `WOO_PROXY_SECRET` 支援，優先走 Proxy；未設定時才回退直連。並補強失敗日誌（route/status/code）以利後續追查。
+
 
 ## [v0.5.37] - 2026-04-23
 ### 🐛 修正
